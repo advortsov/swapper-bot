@@ -22,3 +22,20 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+node_modules/
+dist/
+dist-test/
+coverage/
+.env.*
+!.env.example
+build/
+target/
+.idea/
+.agents/
+.gradle/
+.DS_Store
+.mcp.json
+.claude.json
+/graph.png
+/madge-report.json

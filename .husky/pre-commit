@@ -1,0 +1,5 @@
+npm run precommit
+
+if [ -f "tma/package.json" ]; then
+  npm --prefix tma run precommit
+fi

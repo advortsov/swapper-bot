@@ -1,0 +1,52 @@
+{
+  "name": "swapper-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DEX Aggregator Telegram Bot on NestJS",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/src/main.js",
+    "start:dev": "tsx watch src/main.ts",
+    "start:prod": "node dist/src/main.js",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" \"test/**/*.ts\" --fix",
+    "lint:boundaries": "eslint \"src/**/*.ts\" --max-warnings=0",
+    "lint:circular": "eslint \"src/**/*.ts\" --max-warnings=0 --rule \"import/no-cycle:error\"",
+    "format:write": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"*.{json,md,yml,yaml}\"",
+    "typecheck": "tsc --noEmit",
+    "find-dead-code": "knip",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:validate": "echo \"No migration validation configured yet\"",
+    "precommit": "npm run lint:fix && npm run format:write && npm run lint && npm run lint:boundaries && npm run lint:circular && npm run typecheck && npm run find-dead-code && npm run test"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.8",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.8",
+    "@nestjs/platform-express": "^11.1.8",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@types/node": "^24.10.1",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-boundaries": "^5.2.0",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-promise": "^7.2.1",
+    "eslint-plugin-sonarjs": "^3.0.5",
+    "eslint-plugin-unused-imports": "^4.3.0",
+    "globals": "^16.5.0",
+    "knip": "^5.64.1",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.3",
+    "vitest": "^3.2.4"
+  }
+}

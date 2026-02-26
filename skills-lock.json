@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "skills": {
+    "github": {
+      "source": "callstackincubator/agent-skills",
+      "sourceType": "github",
+      "computedHash": "93dad759c9f1be2cbcfb597904ccde3a73a73088e236f9960a52798febb4782a"
+    },
+    "gof-design-patterns": {
+      "source": "markpitt/claude-skills",
+      "sourceType": "github",
+      "computedHash": "83d750dbe1435cb8d62246f58b99dd2f30c0ea7e90b3a26302eeb04cf284d07f"
+    },
+    "nestjs-best-practices": {
+      "source": "kadajett/agent-nestjs-skills",
+      "sourceType": "github",
+      "computedHash": "1b6f82e889d19d305e38e35594de08eca0242321f353cafa4cf5e61dd3aa1a73"
+    },
+    "postgresql-table-design": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "computedHash": "0728424e6f56972333bd60e4f45da0322ac6db273744d863aa2b94f1e95d61ec"
+    },
+    "typescript-expert": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "computedHash": "7d7786559f73afe2e383506724440a5a72d717134943be138d80d2ec3609930f"
+    },
+    "vitest": {
+      "source": "antfu/skills",
+      "sourceType": "github",
+      "computedHash": "669c7275f7e1379b06b2bcfa593603aead4c983b951c7e8edbc09640aa38d0a1"
+    }
+  }
+}
