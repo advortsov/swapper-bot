@@ -26,7 +26,7 @@ export class SwapService {
       throw new BusinessException('Best quote is empty');
     }
 
-    const walletConnectSession = this.walletConnectService.createSession({
+    const walletConnectSession = await this.walletConnectService.createSession({
       userId: request.userId,
       swapPayload: {
         chain: ETHEREUM_CHAIN,

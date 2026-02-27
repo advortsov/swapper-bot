@@ -78,7 +78,7 @@ describe('SwapService', () => {
       }),
     };
     const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
-      createSession: () => ({
+      createSession: async () => ({
         sessionId: 'session-id',
         uri: 'wc:test',
         expiresAt: '2026-02-27T00:00:00.000Z',

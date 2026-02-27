@@ -6,6 +6,7 @@ const ENV_KEY_TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 const ENV_KEY_METRICS_ENABLED = 'METRICS_ENABLED';
 const ENV_KEY_CACHE_TTL_PRICE = 'CACHE_TTL_PRICE';
 const ENV_KEY_WC_PROJECT_ID = 'WC_PROJECT_ID';
+const ENV_KEY_APP_PUBLIC_URL = 'APP_PUBLIC_URL';
 const ENV_KEY_SWAP_SLIPPAGE = 'SWAP_SLIPPAGE';
 const ENV_KEY_SWAP_TIMEOUT_SECONDS = 'SWAP_TIMEOUT_SECONDS';
 const MIN_PORT = 1;
@@ -46,6 +47,28 @@ function getOptionalString(source: EnvironmentSource, key: string): string | und
   }
 
   return value.trim() === '' ? undefined : value.trim();
+}
+
+function getOptionalHttpUrl(source: EnvironmentSource, key: string): string | undefined {
+  const value = getOptionalString(source, key);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(value);
+  } catch {
+    throw new Error(`Environment variable "${key}" must be a valid URL`);
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error(`Environment variable "${key}" must use http or https protocol`);
+  }
+
+  return parsedUrl.toString();
 }
 
 function validateNodeEnvironment(value: string): NodeEnvironment {
@@ -165,6 +188,7 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     MIN_CACHE_TTL,
   );
   const walletConnectProjectId = getOptionalString(source, ENV_KEY_WC_PROJECT_ID);
+  const appPublicUrl = getOptionalHttpUrl(source, ENV_KEY_APP_PUBLIC_URL);
   const swapTimeoutSeconds = getPositiveInteger(
     source,
     ENV_KEY_SWAP_TIMEOUT_SECONDS,
@@ -193,6 +217,7 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     [ENV_KEY_METRICS_ENABLED]: metricsEnabled.toString(),
     [ENV_KEY_CACHE_TTL_PRICE]: cacheTtlPrice.toString(),
     [ENV_KEY_WC_PROJECT_ID]: walletConnectProjectId ?? source[ENV_KEY_WC_PROJECT_ID],
+    [ENV_KEY_APP_PUBLIC_URL]: appPublicUrl ?? source[ENV_KEY_APP_PUBLIC_URL],
     [ENV_KEY_SWAP_TIMEOUT_SECONDS]: swapTimeoutSeconds.toString(),
     [ENV_KEY_SWAP_SLIPPAGE]: swapSlippage.toString(),
     [ENV_KEY_TELEGRAM_BOT_TOKEN]: telegramBotToken ?? source[ENV_KEY_TELEGRAM_BOT_TOKEN],

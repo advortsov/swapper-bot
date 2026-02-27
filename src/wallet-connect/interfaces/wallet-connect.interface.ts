@@ -19,6 +19,7 @@ export interface IWalletConnectSession {
   userId: string;
   uri: string;
   expiresAt: number;
+  pairingTopic?: string;
   swapPayload: IWalletConnectSwapPayload;
 }
 

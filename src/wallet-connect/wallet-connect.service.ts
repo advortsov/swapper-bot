@@ -1,6 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes, randomUUID } from 'node:crypto';
+import SignClient from '@walletconnect/sign-client';
+import type { SessionTypes } from '@walletconnect/types';
+import { randomUUID } from 'node:crypto';
 
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
 import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
@@ -16,13 +18,27 @@ import { WalletConnectSessionStore } from './wallet-connect.session-store';
 const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 const MIN_SWAP_TIMEOUT_SECONDS = 1;
 const DEFAULT_SWAP_SLIPPAGE = 0.5;
-const SESSION_KEY_SIZE_BYTES = 32;
+const DEFAULT_APP_PUBLIC_URL = 'https://example.org';
+const ETHEREUM_CHAIN_NAMESPACE = 'eip155:1';
+const WALLETCONNECT_ICON_URL = 'https://walletconnect.com/walletconnect-logo.png';
+const WALLETCONNECT_METHODS = [
+  'eth_sendTransaction',
+  'eth_signTransaction',
+  'personal_sign',
+  'eth_signTypedData',
+  'eth_signTypedData_v4',
+];
+const WALLETCONNECT_EVENTS = ['accountsChanged', 'chainChanged'];
 
 @Injectable()
-export class WalletConnectService {
+export class WalletConnectService implements OnModuleInit {
+  private readonly logger = new Logger(WalletConnectService.name);
   private readonly projectId: string;
+  private readonly appPublicUrl: string;
   private readonly swapTimeoutSeconds: number;
   private readonly swapSlippage: number;
+  private signClient: SignClient | null = null;
+  private readonly approvals = new Map<string, () => Promise<SessionTypes.Struct>>();
 
   public constructor(
     private readonly configService: ConfigService,
@@ -32,19 +48,49 @@ export class WalletConnectService {
     private readonly aggregators: readonly IAggregator[],
   ) {
     this.projectId = this.configService.get<string>('WC_PROJECT_ID') ?? '';
+    this.appPublicUrl = this.configService.get<string>('APP_PUBLIC_URL') ?? DEFAULT_APP_PUBLIC_URL;
     this.swapTimeoutSeconds = this.resolveTimeoutSeconds();
     this.swapSlippage = this.resolveSwapSlippage();
   }
 
-  public createSession(input: ICreateWalletConnectSessionInput): IWalletConnectSessionPublic {
+  public async onModuleInit(): Promise<void> {
+    if (this.projectId.trim() === '') {
+      this.logger.warn('WalletConnect is disabled: WC_PROJECT_ID is empty');
+      return;
+    }
+
+    this.signClient = await SignClient.init({
+      projectId: this.projectId,
+      metadata: this.getClientMetadata(),
+    });
+    this.registerClientEvents(this.signClient);
+  }
+
+  public async createSession(
+    input: ICreateWalletConnectSessionInput,
+  ): Promise<IWalletConnectSessionPublic> {
     this.ensureWalletConnectConfigured();
+    const signClient = await this.getSignClient();
+    const { uri, approval } = await signClient.connect({
+      requiredNamespaces: {
+        eip155: {
+          methods: WALLETCONNECT_METHODS,
+          chains: [ETHEREUM_CHAIN_NAMESPACE],
+          events: WALLETCONNECT_EVENTS,
+        },
+      },
+    });
+
+    if (!uri) {
+      throw new BusinessException('Failed to create WalletConnect URI');
+    }
 
     const sessionId = randomUUID();
     const expiresAt = Date.now() + this.swapTimeoutSeconds * 1_000;
     const session: IWalletConnectSession = {
       sessionId,
       userId: input.userId,
-      uri: this.buildWalletConnectUri(),
+      uri,
       expiresAt,
       swapPayload: {
         ...input.swapPayload,
@@ -53,6 +99,7 @@ export class WalletConnectService {
     };
 
     this.sessionStore.save(session);
+    this.approvals.set(sessionId, approval);
     this.metricsService.incrementSwapRequest('initiated');
 
     return {
@@ -85,6 +132,8 @@ export class WalletConnectService {
     }
 
     try {
+      await this.waitForApproval(sessionId, session.expiresAt);
+
       const transaction = await aggregator.buildSwapTransaction({
         chain: session.swapPayload.chain,
         sellTokenAddress: session.swapPayload.sellTokenAddress,
@@ -95,6 +144,7 @@ export class WalletConnectService {
       });
 
       this.sessionStore.delete(sessionId);
+      this.approvals.delete(sessionId);
       this.metricsService.incrementSwapRequest('success');
 
       return transaction;
@@ -132,10 +182,64 @@ export class WalletConnectService {
     return parsedSlippage;
   }
 
-  private buildWalletConnectUri(): string {
-    const topic = randomBytes(SESSION_KEY_SIZE_BYTES).toString('hex');
-    const symmetricKey = randomBytes(SESSION_KEY_SIZE_BYTES).toString('hex');
+  private async getSignClient(): Promise<SignClient> {
+    this.signClient ??= await SignClient.init({
+      projectId: this.projectId,
+      metadata: this.getClientMetadata(),
+    });
+    this.registerClientEvents(this.signClient);
 
-    return `wc:${topic}@2?relay-protocol=irn&symKey=${symmetricKey}&projectId=${this.projectId}`;
+    return this.signClient;
+  }
+
+  private getClientMetadata(): {
+    name: string;
+    description: string;
+    url: string;
+    icons: string[];
+  } {
+    return {
+      name: 'swapper-bot',
+      description: 'DEX Aggregator Telegram Bot',
+      url: this.appPublicUrl,
+      icons: [WALLETCONNECT_ICON_URL],
+    };
+  }
+
+  private async waitForApproval(sessionId: string, expiresAt: number): Promise<void> {
+    const approvalCallback = this.approvals.get(sessionId);
+
+    if (!approvalCallback) {
+      throw new BusinessException('WalletConnect approval promise is not available');
+    }
+
+    const timeout = Math.max(expiresAt - Date.now(), 1);
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      setTimeout(() => {
+        reject(new BusinessException('WalletConnect approval timed out'));
+      }, timeout);
+    });
+
+    await Promise.race([approvalCallback(), timeoutPromise]);
+  }
+
+  private registerClientEvents(signClient: SignClient): void {
+    if (signClient.events.listenerCount('session_connect') === 0) {
+      signClient.on('session_connect', ({ session }) => {
+        this.logger.log(`WalletConnect session connected: ${session.topic}`);
+      });
+    }
+
+    if (signClient.events.listenerCount('session_expire') === 0) {
+      signClient.on('session_expire', ({ topic }) => {
+        this.logger.warn(`WalletConnect session expired: ${topic}`);
+      });
+    }
+
+    if (signClient.events.listenerCount('session_delete') === 0) {
+      signClient.on('session_delete', ({ topic }) => {
+        this.logger.warn(`WalletConnect session deleted: ${topic}`);
+      });
+    }
   }
 }

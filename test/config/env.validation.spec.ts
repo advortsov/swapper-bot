@@ -52,4 +52,15 @@ describe('validateEnvironment', () => {
       'Environment variable "TELEGRAM_BOT_TOKEN" is required',
     );
   });
+
+  it('должен выбрасывать ошибку при невалидном APP_PUBLIC_URL', () => {
+    const environmentWithInvalidAppPublicUrl = {
+      ...validEnvironment,
+      APP_PUBLIC_URL: 'not-a-url',
+    };
+
+    expect(() => validateEnvironment(environmentWithInvalidAppPublicUrl)).toThrowError(
+      'Environment variable "APP_PUBLIC_URL" must be a valid URL',
+    );
+  });
 });

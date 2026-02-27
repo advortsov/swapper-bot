@@ -142,24 +142,7 @@ export class TelegramUpdateHandler {
         toSymbol: command.toSymbol,
         rawCommand: text,
       });
-
-      const providerQuoteLines = session.providerQuotes.map(
-        (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${session.toSymbol}`,
-      );
-
-      await context.reply(
-        [
-          `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} -> ${session.toAmount} ${session.toSymbol}`,
-          `Сеть: ${session.chain}`,
-          `Выбранный агрегатор: ${session.aggregator}`,
-          `Провайдеров опрошено: ${session.providersPolled}`,
-          'Котировки провайдеров:',
-          ...providerQuoteLines,
-          `Session ID: ${session.sessionId}`,
-          `WalletConnect URI: ${session.walletConnectUri}`,
-          `Сессия истекает: ${session.expiresAt}`,
-        ].join('\n'),
-      );
+      await this.replySwapPrepared(context, session);
     } catch (error: unknown) {
       const message =
         error instanceof BusinessException
@@ -239,5 +222,91 @@ export class TelegramUpdateHandler {
     }
 
     return value.trim();
+  }
+
+  private buildWalletConnectLinks(walletConnectUri: string): {
+    metamask: string;
+    metamaskDirect: string;
+    metamaskLegacy: string;
+    trustWallet: string;
+    trustWalletDirect: string;
+  } {
+    const encodedUri = encodeURIComponent(walletConnectUri);
+
+    return {
+      metamask: `https://link.metamask.io/wc?uri=${encodedUri}`,
+      metamaskDirect: `metamask://wc?uri=${encodedUri}`,
+      metamaskLegacy: `https://metamask.app.link/wc?uri=${encodedUri}`,
+      trustWallet: `https://link.trustwallet.com/wc?uri=${encodedUri}`,
+      trustWalletDirect: `trust://wc?uri=${encodedUri}`,
+    };
+  }
+
+  private async replySwapPrepared(
+    context: Context,
+    session: Awaited<ReturnType<SwapService['createSwapSession']>>,
+  ): Promise<void> {
+    const providerQuoteLines = session.providerQuotes.map(
+      (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${session.toSymbol}`,
+    );
+    const walletConnectLinks = this.buildWalletConnectLinks(session.walletConnectUri);
+
+    await context.reply(
+      [
+        `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} -> ${session.toAmount} ${session.toSymbol}`,
+        `Сеть: ${session.chain}`,
+        `Выбранный агрегатор: ${session.aggregator}`,
+        `Провайдеров опрошено: ${session.providersPolled}`,
+        'Котировки провайдеров:',
+        ...providerQuoteLines,
+        `Session ID: ${session.sessionId}`,
+        'Для подключения нажми кнопку кошелька ниже.',
+        `WalletConnect URI: ${session.walletConnectUri}`,
+        `Сессия истекает: ${session.expiresAt}`,
+      ].join('\n'),
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: 'Open in MetaMask',
+                url: walletConnectLinks.metamask,
+              },
+              {
+                text: 'Open in Trust Wallet',
+                url: walletConnectLinks.trustWallet,
+              },
+            ],
+            [
+              {
+                text: 'MetaMask (legacy link)',
+                url: walletConnectLinks.metamaskLegacy,
+              },
+            ],
+          ],
+        },
+      },
+    );
+
+    try {
+      await context.replyWithHTML(
+        [
+          'Прямые deep links (если универсальные кнопки не сработали):',
+          `<a href="${walletConnectLinks.metamaskDirect}">Open in MetaMask app (direct)</a>`,
+          `<a href="${walletConnectLinks.trustWalletDirect}">Open in Trust Wallet app (direct)</a>`,
+        ].join('\n'),
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this.logger.warn(`Failed to send direct deep links: ${message}`);
+
+      await context.reply(
+        [
+          'Прямые deep links (скопируй в браузер вручную):',
+          walletConnectLinks.metamaskDirect,
+          walletConnectLinks.trustWalletDirect,
+        ].join('\n'),
+      );
+    }
   }
 }

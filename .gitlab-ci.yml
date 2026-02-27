@@ -1,0 +1,58 @@
+stages:
+  - test
+  - deploy
+
+default:
+  image: node:22-alpine
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+
+variables:
+  NPM_CONFIG_CACHE: '$CI_PROJECT_DIR/.npm'
+
+test:
+  stage: test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    NODE_ENV: test
+    PORT: '3000'
+    DATABASE_URL: 'postgresql://postgres:postgres@postgres:5432/swapper_bot_ci'
+    TELEGRAM_ENABLED: 'false'
+    TELEGRAM_BOT_TOKEN: ''
+    METRICS_ENABLED: 'false'
+    CACHE_TTL_PRICE: '30'
+    PARASWAP_API_BASE_URL: 'https://api.paraswap.io'
+    ZERO_X_API_BASE_URL: 'https://api.0x.org'
+    ZERO_X_TAKER_ADDRESS: '0x0000000000000000000000000000000000010000'
+    POSTGRES_DB: swapper_bot_ci
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+  script:
+    - npm ci --no-audit --no-fund
+    - npm run lint
+    - npm run typecheck
+    - npm run test
+    - npm run build
+
+deploy:
+  stage: deploy
+  image: alpine:3.21
+  needs: ['test']
+  before_script:
+    - apk add --no-cache bash openssh-client git
+    - eval "$(ssh-agent -s)"
+    - echo "$DEPLOY_SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -p "${DEPLOY_SSH_PORT:-22}" "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - bash ./scripts/deploy.sh "${DEPLOY_HOST}" "${DEPLOY_USER:-root}" "${DEPLOY_SSH_PORT:-22}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
