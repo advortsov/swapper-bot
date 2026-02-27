@@ -6,6 +6,7 @@ const validEnvironment = {
   NODE_ENV: 'development',
   PORT: '3000',
   DATABASE_URL: 'postgresql://user:pass@localhost:5432/dex_bot',
+  TELEGRAM_ENABLED: 'false',
 };
 
 describe('validateEnvironment', () => {
@@ -38,6 +39,17 @@ describe('validateEnvironment', () => {
 
     expect(() => validateEnvironment(resultWithoutDatabaseUrl)).toThrowError(
       'Environment variable "DATABASE_URL" is required',
+    );
+  });
+
+  it('должен требовать TELEGRAM_BOT_TOKEN при включенном TELEGRAM_ENABLED', () => {
+    const resultWithEnabledTelegram = {
+      ...validEnvironment,
+      TELEGRAM_ENABLED: 'true',
+    };
+
+    expect(() => validateEnvironment(resultWithEnabledTelegram)).toThrowError(
+      'Environment variable "TELEGRAM_BOT_TOKEN" is required',
     );
   });
 });

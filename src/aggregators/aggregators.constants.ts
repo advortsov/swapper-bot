@@ -1,0 +1,1 @@
+export const AGGREGATORS_TOKEN = Symbol('AGGREGATORS_TOKEN');
