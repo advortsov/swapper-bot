@@ -23,11 +23,7 @@ export class TokensService implements OnModuleInit {
 
   public async onModuleInit(): Promise<void> {
     for (const chain of SUPPORTED_CHAINS) {
-      const count = await this.tokensRepository.countByChain(chain);
-
-      if (count === 0) {
-        await this.tokensRepository.upsertTokens(this.seedByChain[chain]);
-      }
+      await this.tokensRepository.upsertTokens(this.seedByChain[chain]);
     }
   }
 

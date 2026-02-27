@@ -16,27 +16,6 @@ export interface ITokenRecord {
 export class TokensRepository {
   public constructor(private readonly databaseService: DatabaseService) {}
 
-  public async countByChain(chain: ChainType): Promise<number> {
-    const result = await this.databaseService
-      .getConnection()
-      .selectFrom('tokens')
-      .select((expressionBuilder) => expressionBuilder.fn.countAll<string | number>().as('count'))
-      .where('chain', '=', chain)
-      .executeTakeFirst();
-
-    const value = result?.count;
-
-    if (typeof value === 'number') {
-      return value;
-    }
-
-    if (typeof value === 'string') {
-      return Number.parseInt(value, 10);
-    }
-
-    return 0;
-  }
-
   public async upsertTokens(tokens: readonly ITokenSeed[]): Promise<void> {
     await Promise.all(tokens.map(async (token) => this.upsertToken(token)));
   }
@@ -75,7 +54,7 @@ export class TokensRepository {
         chain: token.chain,
       })
       .onConflict((conflict) =>
-        conflict.column('address').doUpdateSet({
+        conflict.columns(['chain', 'address']).doUpdateSet({
           symbol: token.symbol,
           decimals: token.decimals,
           name: token.name,
