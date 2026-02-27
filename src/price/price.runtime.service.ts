@@ -43,6 +43,8 @@ export class PriceRuntimeService {
         fromAmount: context.response.fromAmount,
         toAmount: context.response.toAmount,
         estimatedGasUsd: context.response.estimatedGasUsd,
+        providersPolled: context.response.providersPolled,
+        providerQuotes: context.response.providerQuotes,
       },
       error: false,
       errorMessage: null,

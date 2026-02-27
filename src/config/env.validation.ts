@@ -5,10 +5,17 @@ const ENV_KEY_TELEGRAM_ENABLED = 'TELEGRAM_ENABLED';
 const ENV_KEY_TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
 const ENV_KEY_METRICS_ENABLED = 'METRICS_ENABLED';
 const ENV_KEY_CACHE_TTL_PRICE = 'CACHE_TTL_PRICE';
+const ENV_KEY_WC_PROJECT_ID = 'WC_PROJECT_ID';
+const ENV_KEY_SWAP_SLIPPAGE = 'SWAP_SLIPPAGE';
+const ENV_KEY_SWAP_TIMEOUT_SECONDS = 'SWAP_TIMEOUT_SECONDS';
 const MIN_PORT = 1;
 const MAX_PORT = 65_535;
 const MIN_CACHE_TTL = 1;
+const MIN_SWAP_TIMEOUT_SECONDS = 1;
+const MIN_SLIPPAGE = 0;
 const DEFAULT_CACHE_TTL_PRICE = 30;
+const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
+const DEFAULT_SWAP_SLIPPAGE = 0.5;
 
 const ALLOWED_NODE_ENVS = ['development', 'production', 'test'] as const;
 
@@ -25,6 +32,20 @@ function getRequiredString(source: EnvironmentSource, key: string): string {
   }
 
   return value;
+}
+
+function getOptionalString(source: EnvironmentSource, key: string): string | undefined {
+  const value = source[key];
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(`Environment variable "${key}" must be a string`);
+  }
+
+  return value.trim() === '' ? undefined : value.trim();
 }
 
 function validateNodeEnvironment(value: string): NodeEnvironment {
@@ -104,6 +125,33 @@ function getPositiveInteger(
   return parsedValue;
 }
 
+function getPositiveNumber(
+  source: EnvironmentSource,
+  key: string,
+  fallback: number,
+  minValueExclusive: number,
+): number {
+  const value = source[key];
+
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(`Environment variable "${key}" must be a valid number`);
+  }
+
+  const parsedValue = Number.parseFloat(value);
+
+  if (!Number.isFinite(parsedValue) || parsedValue <= minValueExclusive) {
+    throw new Error(
+      `Environment variable "${key}" must be a number greater than ${minValueExclusive}`,
+    );
+  }
+
+  return parsedValue;
+}
+
 export function validateEnvironment(source: EnvironmentSource): EnvironmentResult {
   const nodeEnv = validateNodeEnvironment(getRequiredString(source, ENV_KEY_NODE_ENV));
   const port = validatePort(getRequiredString(source, ENV_KEY_PORT));
@@ -115,6 +163,19 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     ENV_KEY_CACHE_TTL_PRICE,
     DEFAULT_CACHE_TTL_PRICE,
     MIN_CACHE_TTL,
+  );
+  const walletConnectProjectId = getOptionalString(source, ENV_KEY_WC_PROJECT_ID);
+  const swapTimeoutSeconds = getPositiveInteger(
+    source,
+    ENV_KEY_SWAP_TIMEOUT_SECONDS,
+    DEFAULT_SWAP_TIMEOUT_SECONDS,
+    MIN_SWAP_TIMEOUT_SECONDS,
+  );
+  const swapSlippage = getPositiveNumber(
+    source,
+    ENV_KEY_SWAP_SLIPPAGE,
+    DEFAULT_SWAP_SLIPPAGE,
+    MIN_SLIPPAGE,
   );
 
   let telegramBotToken: string | undefined;
@@ -131,6 +192,9 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     [ENV_KEY_TELEGRAM_ENABLED]: telegramEnabled.toString(),
     [ENV_KEY_METRICS_ENABLED]: metricsEnabled.toString(),
     [ENV_KEY_CACHE_TTL_PRICE]: cacheTtlPrice.toString(),
+    [ENV_KEY_WC_PROJECT_ID]: walletConnectProjectId ?? source[ENV_KEY_WC_PROJECT_ID],
+    [ENV_KEY_SWAP_TIMEOUT_SECONDS]: swapTimeoutSeconds.toString(),
+    [ENV_KEY_SWAP_SLIPPAGE]: swapSlippage.toString(),
     [ENV_KEY_TELEGRAM_BOT_TOKEN]: telegramBotToken ?? source[ENV_KEY_TELEGRAM_BOT_TOKEN],
   };
 }

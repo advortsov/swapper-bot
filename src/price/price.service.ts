@@ -29,8 +29,8 @@ export class PriceService {
         return cachedResponse;
       }
 
-      const bestQuote = await this.quoteService.fetchBestQuote(preparedInput);
-      const response = this.quoteService.buildResponse(preparedInput, bestQuote);
+      const quoteSelection = await this.quoteService.fetchQuoteSelection(preparedInput);
+      const response = this.quoteService.buildResponse(preparedInput, quoteSelection);
 
       this.runtimeService.saveCached(preparedInput.cacheKey, response);
       await this.runtimeService.logSuccess({

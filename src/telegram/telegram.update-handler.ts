@@ -6,12 +6,17 @@ import { BusinessException } from '../common/exceptions/business.exception';
 import { UsersRepository } from '../database/repositories/users.repository';
 import { PriceService } from '../price/price.service';
 import type { IPriceCommandDto } from './dto/price-command.dto';
+import { SwapService } from '../swap/swap.service';
+import type { ISwapCommandDto } from './dto/swap-command.dto';
 
 const PRICE_COMMAND_REGEX = /^\/price\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)$/i;
+const SWAP_COMMAND_REGEX =
+  /^\/swap\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)(?:\s+on\s+([a-zA-Z0-9_-]+))?$/i;
 const GAS_USD_PRECISION = 4;
 const AMOUNT_MATCH_INDEX = 1;
 const FROM_SYMBOL_MATCH_INDEX = 2;
 const TO_SYMBOL_MATCH_INDEX = 3;
+const CHAIN_MATCH_INDEX = 4;
 
 @Injectable()
 export class TelegramUpdateHandler {
@@ -19,12 +24,14 @@ export class TelegramUpdateHandler {
 
   public constructor(
     private readonly priceService: PriceService,
+    private readonly swapService: SwapService,
     private readonly usersRepository: UsersRepository,
   ) {}
 
   public register(bot: Telegraf): void {
     bot.command('start', async (context: Context) => this.handleStart(context));
     bot.command('price', async (context: Context) => this.handlePrice(context));
+    bot.command('swap', async (context: Context) => this.handleSwap(context));
   }
 
   private async handleStart(context: Context): Promise<void> {
@@ -40,7 +47,7 @@ export class TelegramUpdateHandler {
     });
 
     await context.reply(
-      'Привет! Используй команду /price <amount> <from> to <to>, например /price 10 USDC to USDT',
+      'Привет! Команды: /price <amount> <from> to <to> и /swap <amount> <from> to <to>',
     );
   }
 
@@ -78,6 +85,9 @@ export class TelegramUpdateHandler {
         result.estimatedGasUsd === null
           ? 'N/A'
           : `$${result.estimatedGasUsd.toFixed(GAS_USD_PRECISION)}`;
+      const providerQuoteLines = result.providerQuotes.map(
+        (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${result.toSymbol}`,
+      );
 
       await context.reply(
         [
@@ -85,6 +95,9 @@ export class TelegramUpdateHandler {
           `Сеть: ${result.chain}`,
           `Агрегатор: ${result.aggregator}`,
           `Оценка газа в USD: ${gasText}`,
+          `Провайдеров опрошено: ${result.providersPolled}`,
+          'Котировки провайдеров:',
+          ...providerQuoteLines,
         ].join('\n'),
       );
     } catch (error: unknown) {
@@ -96,6 +109,66 @@ export class TelegramUpdateHandler {
             : 'Внутренняя ошибка';
 
       this.logger.error(`Price command failed: ${message}`);
+      await context.reply(`Ошибка: ${message}`);
+    }
+  }
+
+  private async handleSwap(context: Context): Promise<void> {
+    const from = context.from;
+
+    if (!from) {
+      return;
+    }
+
+    const text = this.getMessageText(context.message);
+
+    if (!text) {
+      await context.reply('Команда не распознана. Пример: /swap 10 USDC to USDT');
+      return;
+    }
+
+    try {
+      const command = this.parseSwapCommand(text);
+
+      await this.usersRepository.upsertUser({
+        id: from.id.toString(),
+        username: from.username ?? null,
+      });
+
+      const session = await this.swapService.createSwapSession({
+        userId: from.id.toString(),
+        amount: command.amount,
+        fromSymbol: command.fromSymbol,
+        toSymbol: command.toSymbol,
+        rawCommand: text,
+      });
+
+      const providerQuoteLines = session.providerQuotes.map(
+        (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${session.toSymbol}`,
+      );
+
+      await context.reply(
+        [
+          `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} -> ${session.toAmount} ${session.toSymbol}`,
+          `Сеть: ${session.chain}`,
+          `Выбранный агрегатор: ${session.aggregator}`,
+          `Провайдеров опрошено: ${session.providersPolled}`,
+          'Котировки провайдеров:',
+          ...providerQuoteLines,
+          `Session ID: ${session.sessionId}`,
+          `WalletConnect URI: ${session.walletConnectUri}`,
+          `Сессия истекает: ${session.expiresAt}`,
+        ].join('\n'),
+      );
+    } catch (error: unknown) {
+      const message =
+        error instanceof BusinessException
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Внутренняя ошибка';
+
+      this.logger.error(`Swap command failed: ${message}`);
       await context.reply(`Ошибка: ${message}`);
     }
   }
@@ -128,6 +201,26 @@ export class TelegramUpdateHandler {
     };
   }
 
+  private parseSwapCommand(messageText: string): ISwapCommandDto {
+    const matches = SWAP_COMMAND_REGEX.exec(messageText);
+
+    if (!matches) {
+      throw new BusinessException('Неверный формат. Пример: /swap 10 USDC to USDT');
+    }
+
+    const chain = this.getOptionalMatch(matches, CHAIN_MATCH_INDEX);
+
+    if (chain && chain.toLowerCase() !== 'ethereum') {
+      throw new BusinessException('Сейчас поддерживается только сеть ethereum');
+    }
+
+    return {
+      amount: this.getMatch(matches, AMOUNT_MATCH_INDEX),
+      fromSymbol: this.getMatch(matches, FROM_SYMBOL_MATCH_INDEX).toUpperCase(),
+      toSymbol: this.getMatch(matches, TO_SYMBOL_MATCH_INDEX).toUpperCase(),
+    };
+  }
+
   private getMatch(matches: RegExpExecArray, index: number): string {
     const value = matches[index];
 
@@ -136,5 +229,15 @@ export class TelegramUpdateHandler {
     }
 
     return value;
+  }
+
+  private getOptionalMatch(matches: RegExpExecArray, index: number): string | null {
+    const value = matches[index];
+
+    if (value === undefined) {
+      return null;
+    }
+
+    return value.trim();
   }
 }

@@ -1,10 +1,6 @@
-export interface IProviderQuote {
-  aggregator: string;
-  toAmount: string;
-  estimatedGasUsd: number | null;
-}
+import type { IProviderQuote } from '../../price/interfaces/price.interface';
 
-export interface IPriceRequest {
+export interface ISwapRequest {
   userId: string;
   amount: string;
   fromSymbol: string;
@@ -12,14 +8,16 @@ export interface IPriceRequest {
   rawCommand: string;
 }
 
-export interface IPriceResponse {
+export interface ISwapSessionResponse {
   chain: string;
   aggregator: string;
   fromSymbol: string;
   toSymbol: string;
   fromAmount: string;
   toAmount: string;
-  estimatedGasUsd: number | null;
   providersPolled: number;
   providerQuotes: readonly IProviderQuote[];
+  walletConnectUri: string;
+  sessionId: string;
+  expiresAt: string;
 }

@@ -17,6 +17,11 @@ export interface IQuoteResponse {
 
 export interface ISwapRequest {
   chain: ChainType;
+  sellTokenAddress: string;
+  buyTokenAddress: string;
+  sellAmountBaseUnits: string;
+  fromAddress: string;
+  slippagePercentage: number;
 }
 
 export interface ISwapTransaction {

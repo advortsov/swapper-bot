@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'vitest';
+
+import type { IQuoteResponse } from '../../src/aggregators/interfaces/aggregator.interface';
+import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
+import type { IPreparedPriceInput, IQuoteSelection } from '../../src/price/price.quote.service';
+import type { PriceQuoteService } from '../../src/price/price.quote.service';
+import { SwapService } from '../../src/swap/swap.service';
+import type { WalletConnectService } from '../../src/wallet-connect/wallet-connect.service';
+
+const preparedPriceInput: IPreparedPriceInput = {
+  normalizedAmount: '10',
+  cacheKey: 'ethereum:ETH:USDC:10',
+  fromToken: {
+    address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    symbol: 'ETH',
+    decimals: 18,
+    name: 'Ether',
+    chain: 'ethereum',
+  },
+  toToken: {
+    address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+    symbol: 'USDC',
+    decimals: 6,
+    name: 'USD Coin',
+    chain: 'ethereum',
+  },
+  sellAmountBaseUnits: '10000000000000000000',
+};
+
+const quoteResponse: IQuoteResponse = {
+  aggregatorName: 'paraswap',
+  toAmountBaseUnits: '20200000000',
+  estimatedGasUsd: 0.23,
+  totalNetworkFeeWei: null,
+  rawQuote: {},
+};
+
+const quoteSelection: IQuoteSelection = {
+  bestQuote: quoteResponse,
+  successfulQuotes: [
+    quoteResponse,
+    {
+      aggregatorName: '0x',
+      toAmountBaseUnits: '20150000000',
+      estimatedGasUsd: null,
+      totalNetworkFeeWei: null,
+      rawQuote: {},
+    },
+  ],
+  providersPolled: 2,
+};
+
+describe('SwapService', () => {
+  it('должен создавать swap-сессию c WalletConnect URI', async () => {
+    const preparedRequests: IPriceRequest[] = [];
+    const priceQuoteService: Pick<
+      PriceQuoteService,
+      'prepare' | 'fetchQuoteSelection' | 'buildResponse'
+    > = {
+      prepare: async (request: IPriceRequest): Promise<IPreparedPriceInput> => {
+        preparedRequests.push(request);
+        return preparedPriceInput;
+      },
+      fetchQuoteSelection: async (): Promise<IQuoteSelection> => quoteSelection,
+      buildResponse: () => ({
+        chain: 'ethereum',
+        aggregator: 'paraswap',
+        fromSymbol: 'ETH',
+        toSymbol: 'USDC',
+        fromAmount: '10',
+        toAmount: '20200',
+        estimatedGasUsd: 0.23,
+        providersPolled: 2,
+        providerQuotes: [
+          { aggregator: 'paraswap', toAmount: '20200', estimatedGasUsd: 0.23 },
+          { aggregator: '0x', toAmount: '20150', estimatedGasUsd: null },
+        ],
+      }),
+    };
+    const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
+      createSession: () => ({
+        sessionId: 'session-id',
+        uri: 'wc:test',
+        expiresAt: '2026-02-27T00:00:00.000Z',
+      }),
+    };
+    const service = new SwapService(
+      priceQuoteService as PriceQuoteService,
+      walletConnectService as WalletConnectService,
+    );
+
+    const result = await service.createSwapSession({
+      userId: '123',
+      amount: '10',
+      fromSymbol: 'ETH',
+      toSymbol: 'USDC',
+      rawCommand: '/swap 10 ETH to USDC',
+    });
+
+    expect(preparedRequests).toHaveLength(1);
+    expect(result.aggregator).toBe('paraswap');
+    expect(result.providersPolled).toBe(2);
+    expect(result.providerQuotes).toHaveLength(2);
+    expect(result.sessionId).toBe('session-id');
+    expect(result.walletConnectUri).toBe('wc:test');
+  });
+});

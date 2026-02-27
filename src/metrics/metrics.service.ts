@@ -22,6 +22,7 @@ export class MetricsService {
   private readonly enabled: boolean;
   private readonly registry: Registry;
   private readonly priceRequestsCounter: Counter<'status'>;
+  private readonly swapRequestsCounter: Counter<'status'>;
   private readonly errorsCounter: Counter<'type'>;
   private readonly httpRequestsCounter: Counter<'provider' | 'method' | 'status_code'>;
   private readonly httpRequestDuration: Histogram<'provider' | 'method' | 'status_code'>;
@@ -39,6 +40,13 @@ export class MetricsService {
     this.priceRequestsCounter = new Counter({
       name: 'price_requests_total',
       help: 'Total number of /price requests',
+      labelNames: ['status'],
+      registers: [this.registry],
+    });
+
+    this.swapRequestsCounter = new Counter({
+      name: 'swap_requests_total',
+      help: 'Total number of /swap requests',
       labelNames: ['status'],
       registers: [this.registry],
     });
@@ -72,6 +80,14 @@ export class MetricsService {
     }
 
     this.priceRequestsCounter.inc({ status });
+  }
+
+  public incrementSwapRequest(status: 'initiated' | 'success' | 'error'): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    this.swapRequestsCounter.inc({ status });
   }
 
   public incrementError(type: string): void {

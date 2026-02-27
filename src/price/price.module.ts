@@ -12,6 +12,6 @@ import { TokensModule } from '../tokens/tokens.module';
 @Module({
   imports: [TokensModule, ChainsModule, AggregatorsModule],
   providers: [PriceCache, PriceRepository, PriceQuoteService, PriceRuntimeService, PriceService],
-  exports: [PriceService],
+  exports: [PriceService, PriceQuoteService],
 })
 export class PriceModule {}

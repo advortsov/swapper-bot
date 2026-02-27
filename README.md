@@ -40,6 +40,15 @@ npm run start:dev
 curl http://localhost:3000/health
 ```
 
+Примеры команд в Telegram:
+
+```text
+/price 10 ETH to USDC
+/swap 0.1 ETH to USDC
+```
+
+`/price` возвращает лучший курс, число опрошенных провайдеров и список котировок по каждому провайдеру.
+
 ## Проверки качества
 
 ```bash

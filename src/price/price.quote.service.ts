@@ -11,6 +11,12 @@ import type { ITokenRecord } from '../tokens/tokens.repository';
 
 const CHAIN_NAME = 'ethereum';
 
+export interface IQuoteSelection {
+  bestQuote: IQuoteResponse;
+  successfulQuotes: readonly IQuoteResponse[];
+  providersPolled: number;
+}
+
 export interface IPreparedPriceInput {
   normalizedAmount: string;
   cacheKey: string;
@@ -44,7 +50,7 @@ export class PriceQuoteService {
     };
   }
 
-  public async fetchBestQuote(input: IPreparedPriceInput): Promise<IQuoteResponse> {
+  public async fetchQuoteSelection(input: IPreparedPriceInput): Promise<IQuoteSelection> {
     const chainAggregators = this.aggregators.filter((aggregator) =>
       aggregator.supportedChains.includes(CHAIN_NAME),
     );
@@ -53,7 +59,7 @@ export class PriceQuoteService {
       throw new BusinessException(`No aggregators configured for chain ${CHAIN_NAME}`);
     }
 
-    const quotes = await Promise.all(
+    const settledQuotes = await Promise.allSettled(
       chainAggregators.map(async (aggregator) =>
         aggregator.getQuote({
           chain: CHAIN_NAME,
@@ -64,24 +70,50 @@ export class PriceQuoteService {
       ),
     );
 
-    return quotes.reduce((bestQuote, currentQuote) => {
-      if (BigInt(currentQuote.toAmountBaseUnits) > BigInt(bestQuote.toAmountBaseUnits)) {
+    const quotes = settledQuotes.flatMap((result) => {
+      if (result.status === 'fulfilled') {
+        return [result.value];
+      }
+
+      return [];
+    });
+
+    if (quotes.length === 0) {
+      throw new BusinessException('Failed to get quotes from all aggregators');
+    }
+
+    const bestQuote = quotes.reduce((currentBestQuote, currentQuote) => {
+      if (BigInt(currentQuote.toAmountBaseUnits) > BigInt(currentBestQuote.toAmountBaseUnits)) {
         return currentQuote;
       }
 
-      return bestQuote;
+      return currentBestQuote;
     });
+
+    return {
+      bestQuote,
+      successfulQuotes: quotes,
+      providersPolled: chainAggregators.length,
+    };
   }
 
-  public buildResponse(input: IPreparedPriceInput, quote: IQuoteResponse): IPriceResponse {
+  public buildResponse(input: IPreparedPriceInput, selection: IQuoteSelection): IPriceResponse {
+    const providerQuotes = selection.successfulQuotes.map((quote) => ({
+      aggregator: quote.aggregatorName,
+      toAmount: formatUnits(BigInt(quote.toAmountBaseUnits), input.toToken.decimals),
+      estimatedGasUsd: quote.estimatedGasUsd,
+    }));
+
     return {
       chain: CHAIN_NAME,
-      aggregator: quote.aggregatorName,
+      aggregator: selection.bestQuote.aggregatorName,
       fromSymbol: input.fromToken.symbol,
       toSymbol: input.toToken.symbol,
       fromAmount: input.normalizedAmount,
-      toAmount: formatUnits(BigInt(quote.toAmountBaseUnits), input.toToken.decimals),
-      estimatedGasUsd: quote.estimatedGasUsd,
+      toAmount: formatUnits(BigInt(selection.bestQuote.toAmountBaseUnits), input.toToken.decimals),
+      estimatedGasUsd: selection.bestQuote.estimatedGasUsd,
+      providersPolled: selection.providersPolled,
+      providerQuotes,
     };
   }
 

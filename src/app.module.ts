@@ -9,8 +9,10 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PriceModule } from './price/price.module';
+import { SwapModule } from './swap/swap.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { TokensModule } from './tokens/tokens.module';
+import { WalletConnectModule } from './wallet-connect/wallet-connect.module';
 
 const nodeEnvironment = process.env['NODE_ENV'] ?? 'development';
 const envFilePath = [
@@ -35,6 +37,8 @@ const envFilePath = [
     AggregatorsModule,
     TokensModule,
     PriceModule,
+    WalletConnectModule,
+    SwapModule,
     TelegramModule,
     HealthModule,
   ],

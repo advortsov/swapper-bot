@@ -15,11 +15,19 @@ import type {
 const ZERO_X_VERSION = 'v2';
 const DEFAULT_ZERO_X_API_BASE_URL = 'https://api.0x.org';
 const DEFAULT_TAKER_ADDRESS = '0x0000000000000000000000000000000000010000';
+const BPS_PERCENT_MULTIPLIER = 100;
 
 interface IZeroXQuoteResponse {
   buyAmount: string;
   liquidityAvailable: boolean;
   totalNetworkFee: string | null;
+  transaction?: IZeroXSwapTransaction;
+}
+
+interface IZeroXSwapTransaction {
+  to: string;
+  data: string;
+  value: string;
 }
 
 function isZeroXQuoteResponse(value: unknown): value is IZeroXQuoteResponse {
@@ -32,6 +40,19 @@ function isZeroXQuoteResponse(value: unknown): value is IZeroXQuoteResponse {
     typeof record['buyAmount'] === 'string' &&
     typeof record['liquidityAvailable'] === 'boolean' &&
     (typeof record['totalNetworkFee'] === 'string' || record['totalNetworkFee'] === null)
+  );
+}
+
+function isZeroXSwapTransaction(value: unknown): value is IZeroXSwapTransaction {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record['to'] === 'string' &&
+    typeof record['data'] === 'string' &&
+    typeof record['value'] === 'string'
   );
 }
 
@@ -90,8 +111,32 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
     }
   }
 
-  public async buildSwapTransaction(_params: ISwapRequest): Promise<ISwapTransaction> {
-    throw new BusinessException('Swap transaction build is not available on phase 1');
+  public async buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction> {
+    const url = this.buildSwapUrl(params);
+    const headers = this.buildHeaders();
+    const startedAt = Date.now();
+
+    try {
+      const response = await this.getJson(url, headers);
+      this.observeRequest(response.statusCode.toString(), startedAt);
+
+      if (!isZeroXQuoteResponse(response.body)) {
+        throw new BusinessException('0x response schema is invalid');
+      }
+
+      if (!response.body.transaction || !isZeroXSwapTransaction(response.body.transaction)) {
+        throw new BusinessException('0x swap transaction is missing in response');
+      }
+
+      return {
+        to: response.body.transaction.to,
+        data: response.body.transaction.data,
+        value: response.body.transaction.value,
+      };
+    } catch (error: unknown) {
+      this.observeRequest('500', startedAt);
+      throw error;
+    }
   }
 
   public async healthCheck(): Promise<boolean> {
@@ -127,6 +172,24 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
     }
 
     return headers;
+  }
+
+  private buildSwapUrl(params: ISwapRequest): URL {
+    const url = new URL('/swap/allowance-holder/quote', this.apiBaseUrl);
+
+    url.searchParams.set('chainId', '1');
+    url.searchParams.set('sellToken', params.sellTokenAddress);
+    url.searchParams.set('buyToken', params.buyTokenAddress);
+    url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
+    url.searchParams.set('taker', params.fromAddress);
+    url.searchParams.set('slippageBps', this.toSlippageBps(params.slippagePercentage));
+
+    return url;
+  }
+
+  private toSlippageBps(slippagePercentage: number): string {
+    const slippageBps = Math.round(slippagePercentage * BPS_PERCENT_MULTIPLIER);
+    return `${Math.max(slippageBps, 1)}`;
   }
 
   private observeRequest(statusCode: string, startedAt: number): void {

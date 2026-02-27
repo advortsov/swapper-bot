@@ -5,7 +5,6 @@ coverage
 .idea
 .env
 .env.*
-!.env.prod.example
 *.md
 docker-compose*.yml
 prometheus.yml
@@ -16,5 +15,3 @@ dist-test
 graph.png
 madge-report.json
 plan.txt
-tma/node_modules
-tma/dist
