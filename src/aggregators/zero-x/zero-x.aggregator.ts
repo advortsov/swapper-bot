@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
 import { BaseAggregator } from '../base/base.aggregator';
@@ -16,6 +17,13 @@ const ZERO_X_VERSION = 'v2';
 const DEFAULT_ZERO_X_API_BASE_URL = 'https://api.0x.org';
 const DEFAULT_TAKER_ADDRESS = '0x0000000000000000000000000000000000010000';
 const BPS_PERCENT_MULTIPLIER = 100;
+const ZERO_X_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
+const CHAIN_ID_BY_CHAIN: Readonly<Record<ChainType, string>> = {
+  ethereum: '1',
+  arbitrum: '42161',
+  base: '8453',
+  optimism: '10',
+};
 
 interface IZeroXQuoteResponse {
   buyAmount: string;
@@ -59,7 +67,7 @@ function isZeroXSwapTransaction(value: unknown): value is IZeroXSwapTransaction 
 @Injectable()
 export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   public readonly name: string = '0x';
-  public readonly supportedChains = ['ethereum'] as const;
+  public readonly supportedChains = ZERO_X_SUPPORTED_CHAINS;
 
   private readonly apiKey: string;
   private readonly apiBaseUrl: string;
@@ -153,7 +161,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   private buildQuoteUrl(params: IQuoteRequest): URL {
     const url = new URL('/swap/allowance-holder/quote', this.apiBaseUrl);
 
-    url.searchParams.set('chainId', '1');
+    url.searchParams.set('chainId', CHAIN_ID_BY_CHAIN[params.chain]);
     url.searchParams.set('sellToken', params.sellTokenAddress);
     url.searchParams.set('buyToken', params.buyTokenAddress);
     url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
@@ -177,7 +185,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   private buildSwapUrl(params: ISwapRequest): URL {
     const url = new URL('/swap/allowance-holder/quote', this.apiBaseUrl);
 
-    url.searchParams.set('chainId', '1');
+    url.searchParams.set('chainId', CHAIN_ID_BY_CHAIN[params.chain]);
     url.searchParams.set('sellToken', params.sellTokenAddress);
     url.searchParams.set('buyToken', params.buyTokenAddress);
     url.searchParams.set('sellAmount', params.sellAmountBaseUnits);

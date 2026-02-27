@@ -44,10 +44,13 @@ curl http://localhost:3000/health
 
 ```text
 /price 10 ETH to USDC
+/price 10 ETH to USDC on arbitrum
 /swap 0.1 ETH to USDC
+/swap 0.1 ETH to USDC on base
 ```
 
 `/price` возвращает лучший курс, число опрошенных провайдеров и список котировок по каждому провайдеру.
+Поддерживаемые EVM-сети: `ethereum` (по умолчанию), `arbitrum`, `base`, `optimism`.
 
 ## Проверки качества
 

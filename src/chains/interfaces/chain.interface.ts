@@ -1,4 +1,6 @@
-export type ChainType = 'ethereum';
+export const SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
+export type ChainType = (typeof SUPPORTED_CHAINS)[number];
+export const DEFAULT_CHAIN: ChainType = 'ethereum';
 
 export interface IChain {
   readonly chainId: number | string;

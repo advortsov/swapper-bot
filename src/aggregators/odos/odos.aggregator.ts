@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
 import { BaseAggregator } from '../base/base.aggregator';
@@ -15,7 +16,13 @@ import type {
 const DEFAULT_ODOS_API_BASE_URL = 'https://api.odos.xyz';
 const QUOTE_ENDPOINT_PATH = '/sor/quote/v2';
 const ASSEMBLE_ENDPOINT_PATH = '/sor/assemble';
-const ETHEREUM_CHAIN_ID = 1;
+const ODOS_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
+const CHAIN_ID_BY_CHAIN: Readonly<Record<ChainType, number>> = {
+  ethereum: 1,
+  arbitrum: Number.parseInt('42161', 10),
+  base: Number.parseInt('8453', 10),
+  optimism: 10,
+};
 const ETH_PSEUDO_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const ODOS_NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000';
 const DEFAULT_QUOTE_USER_ADDRESS = '0x000000000000000000000000000000000000dead';
@@ -101,7 +108,7 @@ function isOdosAssembleResponse(value: unknown): value is IOdosAssembleResponse 
 @Injectable()
 export class OdosAggregator extends BaseAggregator implements IAggregator {
   public readonly name: string = 'odos';
-  public readonly supportedChains = ['ethereum'] as const;
+  public readonly supportedChains = ODOS_SUPPORTED_CHAINS;
 
   private readonly apiBaseUrl: string;
   private readonly apiKey: string;
@@ -118,6 +125,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
 
   public async getQuote(params: IQuoteRequest): Promise<IQuoteResponse> {
     const payload = this.buildQuotePayload({
+      chain: params.chain,
       sellTokenAddress: params.sellTokenAddress,
       buyTokenAddress: params.buyTokenAddress,
       sellAmountBaseUnits: params.sellAmountBaseUnits,
@@ -155,6 +163,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
 
   public async buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction> {
     const quotePayload = this.buildQuotePayload({
+      chain: params.chain,
       sellTokenAddress: params.sellTokenAddress,
       buyTokenAddress: params.buyTokenAddress,
       sellAmountBaseUnits: params.sellAmountBaseUnits,
@@ -206,6 +215,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
 
   public async healthCheck(): Promise<boolean> {
     const payload = this.buildQuotePayload({
+      chain: 'ethereum',
       sellTokenAddress: HEALTHCHECK_SELL_TOKEN,
       buyTokenAddress: HEALTHCHECK_BUY_TOKEN,
       sellAmountBaseUnits: HEALTHCHECK_SELL_AMOUNT,
@@ -222,6 +232,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
   }
 
   private buildQuotePayload(input: {
+    chain: ChainType;
     sellTokenAddress: string;
     buyTokenAddress: string;
     sellAmountBaseUnits: string;
@@ -229,7 +240,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
     slippageLimitPercent: number;
   }): IOdosQuoteRequest {
     return {
-      chainId: ETHEREUM_CHAIN_ID,
+      chainId: CHAIN_ID_BY_CHAIN[input.chain],
       inputTokens: [
         {
           tokenAddress: this.normalizeTokenAddress(input.sellTokenAddress),
@@ -250,9 +261,9 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
   }
 
   private normalizeTokenAddress(address: string): string {
-    const normalized = address.trim().toLowerCase();
+    const normalized = address.trim();
 
-    if (normalized === ETH_PSEUDO_ADDRESS) {
+    if (normalized.toLowerCase() === ETH_PSEUDO_ADDRESS) {
       return ODOS_NATIVE_ADDRESS;
     }
 

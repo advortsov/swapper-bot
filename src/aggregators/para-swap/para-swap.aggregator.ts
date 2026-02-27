@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
 import { BaseAggregator } from '../base/base.aggregator';
@@ -13,10 +14,18 @@ import type {
 } from '../interfaces/aggregator.interface';
 
 const DEFAULT_PARASWAP_API_BASE_URL = 'https://api.paraswap.io';
-const ETHEREUM_NETWORK = '1';
+const PARASWAP_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
+const NETWORK_BY_CHAIN: Readonly<Record<ChainType, string>> = {
+  ethereum: '1',
+  arbitrum: '42161',
+  base: '8453',
+  optimism: '10',
+};
 const SELL_SIDE = 'SELL';
 const PARASWAP_NATIVE_TOKEN = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const USDC_TOKEN = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+const USDC_DECIMALS = '6';
+const WETH_DECIMALS = '18';
 const HEALTHCHECK_SELL_AMOUNT = '1000000000000000';
 const ZERO_BIGINT = 0n;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -73,7 +82,7 @@ function isParaSwapTransactionResponse(value: unknown): value is IParaSwapTransa
 @Injectable()
 export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   public readonly name: string = 'paraswap';
-  public readonly supportedChains = ['ethereum'] as const;
+  public readonly supportedChains = PARASWAP_SUPPORTED_CHAINS;
 
   private readonly apiBaseUrl: string;
 
@@ -119,6 +128,8 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       sellTokenAddress: params.sellTokenAddress,
       buyTokenAddress: params.buyTokenAddress,
       sellAmountBaseUnits: params.sellAmountBaseUnits,
+      sellTokenDecimals: params.sellTokenDecimals,
+      buyTokenDecimals: params.buyTokenDecimals,
     });
     const startedAt = Date.now();
 
@@ -130,12 +141,16 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       }
 
       const transactionUrl = new URL('/transactions/1', this.apiBaseUrl);
+      const network = NETWORK_BY_CHAIN[params.chain];
+      transactionUrl.pathname = `/transactions/${network}`;
       transactionUrl.searchParams.set('ignoreChecks', 'true');
 
       const transactionResponse = await this.postJson(transactionUrl, {
         srcToken: this.normalizeToken(params.sellTokenAddress),
         destToken: this.normalizeToken(params.buyTokenAddress),
         srcAmount: params.sellAmountBaseUnits,
+        srcDecimals: params.sellTokenDecimals,
+        destDecimals: params.buyTokenDecimals,
         userAddress: params.fromAddress,
         slippage: params.slippagePercentage,
         priceRoute: priceResponse.body.priceRoute,
@@ -170,13 +185,16 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   }
 
   private buildQuoteUrl(params: IQuoteRequest): URL {
+    const network = NETWORK_BY_CHAIN[params.chain];
     const url = new URL('/prices', this.apiBaseUrl);
 
     url.searchParams.set('srcToken', this.normalizeToken(params.sellTokenAddress));
     url.searchParams.set('destToken', this.normalizeToken(params.buyTokenAddress));
     url.searchParams.set('amount', params.sellAmountBaseUnits);
+    url.searchParams.set('srcDecimals', `${params.sellTokenDecimals}`);
+    url.searchParams.set('destDecimals', `${params.buyTokenDecimals}`);
     url.searchParams.set('side', SELL_SIDE);
-    url.searchParams.set('network', ETHEREUM_NETWORK);
+    url.searchParams.set('network', network);
 
     return url;
   }
@@ -187,8 +205,10 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
     url.searchParams.set('srcToken', PARASWAP_NATIVE_TOKEN);
     url.searchParams.set('destToken', USDC_TOKEN);
     url.searchParams.set('amount', HEALTHCHECK_SELL_AMOUNT);
+    url.searchParams.set('srcDecimals', WETH_DECIMALS);
+    url.searchParams.set('destDecimals', USDC_DECIMALS);
     url.searchParams.set('side', SELL_SIDE);
-    url.searchParams.set('network', ETHEREUM_NETWORK);
+    url.searchParams.set('network', NETWORK_BY_CHAIN.ethereum);
 
     return url;
   }

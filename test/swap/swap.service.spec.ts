@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { IQuoteResponse } from '../../src/aggregators/interfaces/aggregator.interface';
+import type { ChainType } from '../../src/chains/interfaces/chain.interface';
 import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
 import type { IPreparedPriceInput, IQuoteSelection } from '../../src/price/price.quote.service';
 import type { PriceQuoteService } from '../../src/price/price.quote.service';
@@ -25,6 +26,7 @@ const preparedPriceInput: IPreparedPriceInput = {
     chain: 'ethereum',
   },
   sellAmountBaseUnits: '10000000000000000000',
+  chain: 'ethereum',
 };
 
 const quoteResponse: IQuoteResponse = {
@@ -53,6 +55,11 @@ const quoteSelection: IQuoteSelection = {
 describe('SwapService', () => {
   it('должен создавать swap-сессию c WalletConnect URI', async () => {
     const preparedRequests: IPriceRequest[] = [];
+    const sessionPayloads: {
+      chain: ChainType;
+      sellTokenDecimals: number;
+      buyTokenDecimals: number;
+    }[] = [];
     const priceQuoteService: Pick<
       PriceQuoteService,
       'prepare' | 'fetchQuoteSelection' | 'buildResponse'
@@ -78,11 +85,19 @@ describe('SwapService', () => {
       }),
     };
     const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
-      createSession: async () => ({
-        sessionId: 'session-id',
-        uri: 'wc:test',
-        expiresAt: '2026-02-27T00:00:00.000Z',
-      }),
+      createSession: async (input) => {
+        sessionPayloads.push({
+          chain: input.swapPayload.chain,
+          sellTokenDecimals: input.swapPayload.sellTokenDecimals,
+          buyTokenDecimals: input.swapPayload.buyTokenDecimals,
+        });
+
+        return {
+          sessionId: 'session-id',
+          uri: 'wc:test',
+          expiresAt: '2026-02-27T00:00:00.000Z',
+        };
+      },
     };
     const service = new SwapService(
       priceQuoteService as PriceQuoteService,
@@ -94,10 +109,19 @@ describe('SwapService', () => {
       amount: '10',
       fromSymbol: 'ETH',
       toSymbol: 'USDC',
+      chain: 'ethereum',
       rawCommand: '/swap 10 ETH to USDC',
     });
 
     expect(preparedRequests).toHaveLength(1);
+    expect(preparedRequests[0]?.chain).toBe('ethereum');
+    expect(sessionPayloads).toEqual([
+      {
+        chain: 'ethereum',
+        sellTokenDecimals: 18,
+        buyTokenDecimals: 6,
+      },
+    ]);
     expect(result.aggregator).toBe('paraswap');
     expect(result.providersPolled).toBe(2);
     expect(result.providerQuotes).toHaveLength(2);

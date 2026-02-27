@@ -1,3 +1,5 @@
+import type { ChainType } from '../../chains/interfaces/chain.interface';
+
 export interface IProviderQuote {
   aggregator: string;
   toAmount: string;
@@ -5,6 +7,7 @@ export interface IProviderQuote {
 }
 
 export interface IPriceRequest {
+  chain: ChainType;
   userId: string;
   amount: string;
   fromSymbol: string;
@@ -13,7 +16,7 @@ export interface IPriceRequest {
 }
 
 export interface IPriceResponse {
-  chain: string;
+  chain: ChainType;
   aggregator: string;
   fromSymbol: string;
   toSymbol: string;

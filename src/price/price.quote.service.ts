@@ -3,13 +3,12 @@ import { formatUnits, parseUnits } from 'viem';
 
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
 import type { IAggregator, IQuoteResponse } from '../aggregators/interfaces/aggregator.interface';
-import { EthereumChain } from '../chains/ethereum/ethereum.chain';
+import { CHAINS_TOKEN, type IChainsCollection } from '../chains/chains.constants';
+import type { ChainType, IChain } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { TokensService } from '../tokens/tokens.service';
 import type { IPriceRequest, IPriceResponse } from './interfaces/price.interface';
 import type { ITokenRecord } from '../tokens/tokens.repository';
-
-const CHAIN_NAME = 'ethereum';
 
 export interface IQuoteSelection {
   bestQuote: IQuoteResponse;
@@ -18,6 +17,7 @@ export interface IQuoteSelection {
 }
 
 export interface IPreparedPriceInput {
+  chain: ChainType;
   normalizedAmount: string;
   cacheKey: string;
   fromToken: ITokenRecord;
@@ -31,19 +31,27 @@ export class PriceQuoteService {
     @Inject(AGGREGATORS_TOKEN)
     private readonly aggregators: readonly IAggregator[],
     private readonly tokensService: TokensService,
-    private readonly ethereumChain: EthereumChain,
+    @Inject(CHAINS_TOKEN)
+    private readonly chains: IChainsCollection,
   ) {}
 
   public async prepare(request: IPriceRequest): Promise<IPreparedPriceInput> {
     const normalizedAmount = this.normalizeAmount(request.amount);
-    const fromToken = await this.tokensService.getTokenBySymbol(request.fromSymbol);
-    const toToken = await this.tokensService.getTokenBySymbol(request.toSymbol);
+    const chain = this.resolveChain(request.chain);
+    const fromToken = await this.tokensService.getTokenBySymbol(request.fromSymbol, request.chain);
+    const toToken = await this.tokensService.getTokenBySymbol(request.toSymbol, request.chain);
 
-    this.ensureSupportedPair(fromToken.address, toToken.address);
+    this.ensureSupportedPair(chain, fromToken.address, toToken.address);
 
     return {
+      chain: request.chain,
       normalizedAmount,
-      cacheKey: this.buildCacheKey(normalizedAmount, fromToken.symbol, toToken.symbol),
+      cacheKey: this.buildCacheKey(
+        request.chain,
+        normalizedAmount,
+        fromToken.symbol,
+        toToken.symbol,
+      ),
       fromToken,
       toToken,
       sellAmountBaseUnits: parseUnits(normalizedAmount, fromToken.decimals).toString(),
@@ -52,20 +60,22 @@ export class PriceQuoteService {
 
   public async fetchQuoteSelection(input: IPreparedPriceInput): Promise<IQuoteSelection> {
     const chainAggregators = this.aggregators.filter((aggregator) =>
-      aggregator.supportedChains.includes(CHAIN_NAME),
+      aggregator.supportedChains.includes(input.chain),
     );
 
     if (chainAggregators.length === 0) {
-      throw new BusinessException(`No aggregators configured for chain ${CHAIN_NAME}`);
+      throw new BusinessException(`No aggregators configured for chain ${input.chain}`);
     }
 
     const settledQuotes = await Promise.allSettled(
       chainAggregators.map(async (aggregator) =>
         aggregator.getQuote({
-          chain: CHAIN_NAME,
+          chain: input.chain,
           sellTokenAddress: input.fromToken.address,
           buyTokenAddress: input.toToken.address,
           sellAmountBaseUnits: input.sellAmountBaseUnits,
+          sellTokenDecimals: input.fromToken.decimals,
+          buyTokenDecimals: input.toToken.decimals,
         }),
       ),
     );
@@ -105,7 +115,7 @@ export class PriceQuoteService {
     }));
 
     return {
-      chain: CHAIN_NAME,
+      chain: input.chain,
       aggregator: selection.bestQuote.aggregatorName,
       fromSymbol: input.fromToken.symbol,
       toSymbol: input.toToken.symbol,
@@ -127,17 +137,32 @@ export class PriceQuoteService {
     return amount.trim();
   }
 
-  private buildCacheKey(amount: string, fromSymbol: string, toSymbol: string): string {
-    return `${CHAIN_NAME}:${fromSymbol}:${toSymbol}:${amount}`;
+  private buildCacheKey(
+    chain: ChainType,
+    amount: string,
+    fromSymbol: string,
+    toSymbol: string,
+  ): string {
+    return `${chain}:${fromSymbol}:${toSymbol}:${amount}`;
   }
 
-  private ensureSupportedPair(fromAddress: string, toAddress: string): void {
-    if (!this.ethereumChain.validateAddress(fromAddress)) {
+  private ensureSupportedPair(chain: IChain, fromAddress: string, toAddress: string): void {
+    if (!chain.validateAddress(fromAddress)) {
       throw new BusinessException(`Invalid from token address: ${fromAddress}`);
     }
 
-    if (!this.ethereumChain.validateAddress(toAddress)) {
+    if (!chain.validateAddress(toAddress)) {
       throw new BusinessException(`Invalid to token address: ${toAddress}`);
     }
+  }
+
+  private resolveChain(chainName: ChainType): IChain {
+    const chain = this.chains.find((candidateChain) => candidateChain.name === chainName);
+
+    if (!chain) {
+      throw new BusinessException(`Chain ${chainName} is not supported`);
+    }
+
+    return chain;
   }
 }

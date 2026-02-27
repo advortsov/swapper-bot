@@ -1,21 +1,22 @@
 import { Injectable } from '@nestjs/common';
 
+import type { ChainType } from '../chains/interfaces/chain.interface';
 import { DatabaseService } from '../database/database.service';
-import type { IEthereumTokenSeed } from './seed/ethereum.tokens.seed';
+import type { ITokenSeed } from './seed/token-seed.interface';
 
 export interface ITokenRecord {
   address: string;
   symbol: string;
   decimals: number;
   name: string;
-  chain: string;
+  chain: ChainType;
 }
 
 @Injectable()
 export class TokensRepository {
   public constructor(private readonly databaseService: DatabaseService) {}
 
-  public async countByChain(chain: string): Promise<number> {
+  public async countByChain(chain: ChainType): Promise<number> {
     const result = await this.databaseService
       .getConnection()
       .selectFrom('tokens')
@@ -36,11 +37,11 @@ export class TokensRepository {
     return 0;
   }
 
-  public async upsertTokens(tokens: readonly IEthereumTokenSeed[]): Promise<void> {
+  public async upsertTokens(tokens: readonly ITokenSeed[]): Promise<void> {
     await Promise.all(tokens.map(async (token) => this.upsertToken(token)));
   }
 
-  public async findBySymbol(symbol: string, chain: string): Promise<ITokenRecord | null> {
+  public async findBySymbol(symbol: string, chain: ChainType): Promise<ITokenRecord | null> {
     const token = await this.databaseService
       .getConnection()
       .selectFrom('tokens')
@@ -58,11 +59,11 @@ export class TokensRepository {
       symbol: token.symbol,
       decimals: token.decimals,
       name: token.name,
-      chain: token.chain,
+      chain: token.chain as ChainType,
     };
   }
 
-  private async upsertToken(token: IEthereumTokenSeed): Promise<void> {
+  private async upsertToken(token: ITokenSeed): Promise<void> {
     await this.databaseService
       .getConnection()
       .insertInto('tokens')

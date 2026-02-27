@@ -1,12 +1,6 @@
-export interface IEthereumTokenSeed {
-  address: string;
-  symbol: string;
-  decimals: number;
-  name: string;
-  chain: string;
-}
+import type { ITokenSeed } from './token-seed.interface';
 
-export const ETHEREUM_TOKENS_SEED: readonly IEthereumTokenSeed[] = [
+export const ETHEREUM_TOKENS_SEED: readonly ITokenSeed[] = [
   {
     address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
     symbol: 'ETH',

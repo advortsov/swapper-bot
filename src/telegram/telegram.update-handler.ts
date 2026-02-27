@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Context, Telegraf } from 'telegraf';
 import type { Message } from 'telegraf/typings/core/types/typegram';
 
+import {
+  DEFAULT_CHAIN,
+  SUPPORTED_CHAINS,
+  type ChainType,
+} from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { UsersRepository } from '../database/repositories/users.repository';
 import { PriceService } from '../price/price.service';
@@ -9,9 +14,11 @@ import type { IPriceCommandDto } from './dto/price-command.dto';
 import { SwapService } from '../swap/swap.service';
 import type { ISwapCommandDto } from './dto/swap-command.dto';
 
-const PRICE_COMMAND_REGEX = /^\/price\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)$/i;
+const PRICE_COMMAND_REGEX =
+  /^\/price\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)(?:\s+on\s+([a-zA-Z0-9_-]+))?$/i;
 const SWAP_COMMAND_REGEX =
   /^\/swap\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)(?:\s+on\s+([a-zA-Z0-9_-]+))?$/i;
+const SUPPORTED_CHAIN_SET = new Set<ChainType>(SUPPORTED_CHAINS);
 const GAS_USD_PRECISION = 4;
 const AMOUNT_MATCH_INDEX = 1;
 const FROM_SYMBOL_MATCH_INDEX = 2;
@@ -47,7 +54,7 @@ export class TelegramUpdateHandler {
     });
 
     await context.reply(
-      'Привет! Команды: /price <amount> <from> to <to> и /swap <amount> <from> to <to>',
+      'Привет! Команды: /price <amount> <from> to <to> [on <chain>] и /swap <amount> <from> to <to> [on <chain>]',
     );
   }
 
@@ -74,6 +81,7 @@ export class TelegramUpdateHandler {
       });
 
       const result = await this.priceService.getBestQuote({
+        chain: command.chain,
         userId: from.id.toString(),
         amount: command.amount,
         fromSymbol: command.fromSymbol,
@@ -136,6 +144,7 @@ export class TelegramUpdateHandler {
       });
 
       const session = await this.swapService.createSwapSession({
+        chain: command.chain,
         userId: from.id.toString(),
         amount: command.amount,
         fromSymbol: command.fromSymbol,
@@ -181,6 +190,7 @@ export class TelegramUpdateHandler {
       amount: this.getMatch(matches, AMOUNT_MATCH_INDEX),
       fromSymbol: this.getMatch(matches, FROM_SYMBOL_MATCH_INDEX).toUpperCase(),
       toSymbol: this.getMatch(matches, TO_SYMBOL_MATCH_INDEX).toUpperCase(),
+      chain: this.parseChain(this.getOptionalMatch(matches, CHAIN_MATCH_INDEX)),
     };
   }
 
@@ -191,16 +201,11 @@ export class TelegramUpdateHandler {
       throw new BusinessException('Неверный формат. Пример: /swap 10 USDC to USDT');
     }
 
-    const chain = this.getOptionalMatch(matches, CHAIN_MATCH_INDEX);
-
-    if (chain && chain.toLowerCase() !== 'ethereum') {
-      throw new BusinessException('Сейчас поддерживается только сеть ethereum');
-    }
-
     return {
       amount: this.getMatch(matches, AMOUNT_MATCH_INDEX),
       fromSymbol: this.getMatch(matches, FROM_SYMBOL_MATCH_INDEX).toUpperCase(),
       toSymbol: this.getMatch(matches, TO_SYMBOL_MATCH_INDEX).toUpperCase(),
+      chain: this.parseChain(this.getOptionalMatch(matches, CHAIN_MATCH_INDEX)),
     };
   }
 
@@ -222,6 +227,22 @@ export class TelegramUpdateHandler {
     }
 
     return value.trim();
+  }
+
+  private parseChain(rawChain: string | null): ChainType {
+    if (rawChain === null || rawChain.trim() === '') {
+      return DEFAULT_CHAIN;
+    }
+
+    const normalizedChain = rawChain.trim().toLowerCase() as ChainType;
+
+    if (!SUPPORTED_CHAIN_SET.has(normalizedChain)) {
+      throw new BusinessException(
+        `Сеть ${normalizedChain} не поддерживается. Доступно: ${SUPPORTED_CHAINS.join(', ')}`,
+      );
+    }
+
+    return normalizedChain;
   }
 
   private buildWalletConnectLinks(walletConnectUri: string): {

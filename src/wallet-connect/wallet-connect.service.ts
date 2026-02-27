@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
 import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
+import type { ChainType } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { MetricsService } from '../metrics/metrics.service';
 import type {
@@ -19,7 +20,12 @@ const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 const MIN_SWAP_TIMEOUT_SECONDS = 1;
 const DEFAULT_SWAP_SLIPPAGE = 0.5;
 const DEFAULT_APP_PUBLIC_URL = 'https://example.org';
-const ETHEREUM_CHAIN_NAMESPACE = 'eip155:1';
+const CHAIN_NAMESPACE_BY_CHAIN: Readonly<Record<ChainType, string>> = {
+  ethereum: 'eip155:1',
+  arbitrum: 'eip155:42161',
+  base: 'eip155:8453',
+  optimism: 'eip155:10',
+};
 const WALLETCONNECT_ICON_URL = 'https://walletconnect.com/walletconnect-logo.png';
 const WALLETCONNECT_METHODS = [
   'eth_sendTransaction',
@@ -75,7 +81,7 @@ export class WalletConnectService implements OnModuleInit {
       requiredNamespaces: {
         eip155: {
           methods: WALLETCONNECT_METHODS,
-          chains: [ETHEREUM_CHAIN_NAMESPACE],
+          chains: [CHAIN_NAMESPACE_BY_CHAIN[input.swapPayload.chain]],
           events: WALLETCONNECT_EVENTS,
         },
       },
@@ -139,6 +145,8 @@ export class WalletConnectService implements OnModuleInit {
         sellTokenAddress: session.swapPayload.sellTokenAddress,
         buyTokenAddress: session.swapPayload.buyTokenAddress,
         sellAmountBaseUnits: session.swapPayload.sellAmountBaseUnits,
+        sellTokenDecimals: session.swapPayload.sellTokenDecimals,
+        buyTokenDecimals: session.swapPayload.buyTokenDecimals,
         fromAddress: walletAddress,
         slippagePercentage: session.swapPayload.slippagePercentage,
       });

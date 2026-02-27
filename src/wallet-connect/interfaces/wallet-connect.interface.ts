@@ -6,6 +6,8 @@ export interface IWalletConnectSwapPayload {
   sellTokenAddress: string;
   buyTokenAddress: string;
   sellAmountBaseUnits: string;
+  sellTokenDecimals: number;
+  buyTokenDecimals: number;
   slippagePercentage: number;
 }
 

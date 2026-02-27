@@ -1,6 +1,8 @@
+import type { ChainType } from '../../chains/interfaces/chain.interface';
 import type { IProviderQuote } from '../../price/interfaces/price.interface';
 
 export interface ISwapRequest {
+  chain: ChainType;
   userId: string;
   amount: string;
   fromSymbol: string;
@@ -9,7 +11,7 @@ export interface ISwapRequest {
 }
 
 export interface ISwapSessionResponse {
-  chain: string;
+  chain: ChainType;
   aggregator: string;
   fromSymbol: string;
   toSymbol: string;

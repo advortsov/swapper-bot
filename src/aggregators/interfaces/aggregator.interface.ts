@@ -5,6 +5,8 @@ export interface IQuoteRequest {
   sellTokenAddress: string;
   buyTokenAddress: string;
   sellAmountBaseUnits: string;
+  sellTokenDecimals: number;
+  buyTokenDecimals: number;
 }
 
 export interface IQuoteResponse {
@@ -20,6 +22,8 @@ export interface ISwapRequest {
   sellTokenAddress: string;
   buyTokenAddress: string;
   sellAmountBaseUnits: string;
+  sellTokenDecimals: number;
+  buyTokenDecimals: number;
   fromAddress: string;
   slippagePercentage: number;
 }

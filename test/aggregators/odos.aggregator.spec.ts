@@ -46,6 +46,8 @@ describe('OdosAggregator', () => {
       sellTokenAddress: ETH_PSEUDO_ADDRESS,
       buyTokenAddress: '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
       sellAmountBaseUnits: '1000000000000000',
+      sellTokenDecimals: 18,
+      buyTokenDecimals: 6,
     });
 
     const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
@@ -86,6 +88,8 @@ describe('OdosAggregator', () => {
       sellTokenAddress: ETH_PSEUDO_ADDRESS,
       buyTokenAddress: '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
       sellAmountBaseUnits: '1000000000000000',
+      sellTokenDecimals: 18,
+      buyTokenDecimals: 6,
       fromAddress: '0x000000000000000000000000000000000000dEaD',
       slippagePercentage: 0.5,
     });

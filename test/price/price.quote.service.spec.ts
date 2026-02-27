@@ -7,8 +7,7 @@ import type {
   ISwapRequest,
   ISwapTransaction,
 } from '../../src/aggregators/interfaces/aggregator.interface';
-import type { EthereumChain } from '../../src/chains/ethereum/ethereum.chain';
-import type { ChainType } from '../../src/chains/interfaces/chain.interface';
+import type { IChain, ChainType } from '../../src/chains/interfaces/chain.interface';
 import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
 import { PriceQuoteService } from '../../src/price/price.quote.service';
 import type { ITokenRecord } from '../../src/tokens/tokens.repository';
@@ -30,6 +29,13 @@ const TO_TOKEN: ITokenRecord = {
   chain: 'ethereum',
 };
 
+const DEFAULT_CHAINS: readonly IChain[] = [
+  createFakeChain('ethereum'),
+  createFakeChain('arbitrum'),
+  createFakeChain('base'),
+  createFakeChain('optimism'),
+];
+
 interface IFakeAggregatorOptions {
   name: string;
   toAmountBaseUnits: string;
@@ -41,6 +47,7 @@ class FakeAggregator implements IAggregator {
   public readonly name: string;
   public readonly supportedChains: readonly ChainType[];
   public calls: number = 0;
+  public lastQuoteRequest: IQuoteRequest | null = null;
   private readonly toAmountBaseUnits: string;
   private readonly throwsError: boolean;
 
@@ -51,8 +58,9 @@ class FakeAggregator implements IAggregator {
     this.throwsError = options.throwsError ?? false;
   }
 
-  public async getQuote(_params: IQuoteRequest): Promise<IQuoteResponse> {
+  public async getQuote(params: IQuoteRequest): Promise<IQuoteResponse> {
     this.calls += 1;
+    this.lastQuoteRequest = params;
 
     if (this.throwsError) {
       throw new Error(`${this.name} failed`);
@@ -81,6 +89,7 @@ class FakeAggregator implements IAggregator {
 }
 
 const priceRequest: IPriceRequest = {
+  chain: 'ethereum',
   userId: 'user-1',
   amount: '10',
   fromSymbol: 'ETH',
@@ -88,26 +97,32 @@ const priceRequest: IPriceRequest = {
   rawCommand: '/price 10 ETH to USDC',
 };
 
-function createService(aggregators: readonly IAggregator[]): PriceQuoteService {
+function createFakeChain(name: ChainType): IChain {
+  return {
+    name,
+    chainId: 1,
+    getGasPrice: async () => 0n,
+    getTokenDecimals: async () => 18,
+    validateAddress: () => true,
+    buildExplorerUrl: (txHash: string) => txHash,
+  };
+}
+
+function createService(
+  aggregators: readonly IAggregator[],
+  chains: readonly IChain[] = DEFAULT_CHAINS,
+): PriceQuoteService {
   const tokensService: Pick<TokensService, 'getTokenBySymbol'> = {
-    getTokenBySymbol: async (symbol: string): Promise<ITokenRecord> => {
+    getTokenBySymbol: async (symbol: string, chain: ChainType): Promise<ITokenRecord> => {
       if (symbol === FROM_TOKEN.symbol) {
-        return FROM_TOKEN;
+        return { ...FROM_TOKEN, chain };
       }
 
-      return TO_TOKEN;
+      return { ...TO_TOKEN, chain };
     },
   };
 
-  const ethereumChain: Pick<EthereumChain, 'validateAddress'> = {
-    validateAddress: (_address: string): boolean => true,
-  };
-
-  return new PriceQuoteService(
-    aggregators,
-    tokensService as TokensService,
-    ethereumChain as EthereumChain,
-  );
+  return new PriceQuoteService(aggregators, tokensService as TokensService, chains);
 }
 
 describe('PriceQuoteService', () => {
@@ -131,6 +146,26 @@ describe('PriceQuoteService', () => {
     expect(selection.successfulQuotes).toHaveLength(2);
     expect(zeroX.calls).toBe(1);
     expect(paraSwap.calls).toBe(1);
+  });
+
+  it('должен учитывать сеть в cache key и запросе к агрегатору', async () => {
+    const arbAggregator = new FakeAggregator({
+      name: 'odos',
+      toAmountBaseUnits: '12000000',
+      supportedChains: ['arbitrum'],
+    });
+    const service = createService([arbAggregator]);
+
+    const preparedInput = await service.prepare({
+      ...priceRequest,
+      chain: 'arbitrum',
+      rawCommand: '/price 10 ETH to USDC on arbitrum',
+    });
+    const selection = await service.fetchQuoteSelection(preparedInput);
+
+    expect(preparedInput.cacheKey).toBe('arbitrum:ETH:USDC:10');
+    expect(selection.bestQuote.aggregatorName).toBe('odos');
+    expect(arbAggregator.lastQuoteRequest?.chain).toBe('arbitrum');
   });
 
   it('должен выбрасывать ошибку при отсутствии агрегаторов для сети', async () => {

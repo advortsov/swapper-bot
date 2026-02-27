@@ -1,29 +1,43 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 
+import { ARBITRUM_TOKENS_SEED } from './seed/arbitrum.tokens.seed';
+import { BASE_TOKENS_SEED } from './seed/base.tokens.seed';
 import { ETHEREUM_TOKENS_SEED } from './seed/ethereum.tokens.seed';
+import { OPTIMISM_TOKENS_SEED } from './seed/optimism.tokens.seed';
+import type { ITokenSeed } from './seed/token-seed.interface';
 import { TokensRepository } from './tokens.repository';
 import type { ITokenRecord } from './tokens.repository';
+import { SUPPORTED_CHAINS, type ChainType } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
-
-const ETHEREUM_CHAIN = 'ethereum';
 
 @Injectable()
 export class TokensService implements OnModuleInit {
+  private readonly seedByChain: Readonly<Record<ChainType, readonly ITokenSeed[]>> = {
+    ethereum: ETHEREUM_TOKENS_SEED,
+    arbitrum: ARBITRUM_TOKENS_SEED,
+    base: BASE_TOKENS_SEED,
+    optimism: OPTIMISM_TOKENS_SEED,
+  };
+
   public constructor(private readonly tokensRepository: TokensRepository) {}
 
   public async onModuleInit(): Promise<void> {
-    const count = await this.tokensRepository.countByChain(ETHEREUM_CHAIN);
+    for (const chain of SUPPORTED_CHAINS) {
+      const count = await this.tokensRepository.countByChain(chain);
 
-    if (count === 0) {
-      await this.tokensRepository.upsertTokens(ETHEREUM_TOKENS_SEED);
+      if (count === 0) {
+        await this.tokensRepository.upsertTokens(this.seedByChain[chain]);
+      }
     }
   }
 
-  public async getTokenBySymbol(symbol: string): Promise<ITokenRecord> {
-    const token = await this.tokensRepository.findBySymbol(symbol, ETHEREUM_CHAIN);
+  public async getTokenBySymbol(symbol: string, chain: ChainType): Promise<ITokenRecord> {
+    const token = await this.tokensRepository.findBySymbol(symbol, chain);
 
     if (!token) {
-      throw new BusinessException(`Токен ${symbol.toUpperCase()} не поддерживается`);
+      throw new BusinessException(
+        `Токен ${symbol.toUpperCase()} не поддерживается в сети ${chain}`,
+      );
     }
 
     return token;

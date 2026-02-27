@@ -6,8 +6,6 @@ import { PriceQuoteService } from '../price/price.quote.service';
 import type { ISwapRequest, ISwapSessionResponse } from './interfaces/swap.interface';
 import { WalletConnectService } from '../wallet-connect/wallet-connect.service';
 
-const ETHEREUM_CHAIN = 'ethereum';
-
 @Injectable()
 export class SwapService {
   public constructor(
@@ -29,11 +27,13 @@ export class SwapService {
     const walletConnectSession = await this.walletConnectService.createSession({
       userId: request.userId,
       swapPayload: {
-        chain: ETHEREUM_CHAIN,
+        chain: request.chain,
         aggregatorName: bestQuote.aggregatorName,
         sellTokenAddress: preparedInput.fromToken.address,
         buyTokenAddress: preparedInput.toToken.address,
         sellAmountBaseUnits: preparedInput.sellAmountBaseUnits,
+        sellTokenDecimals: preparedInput.fromToken.decimals,
+        buyTokenDecimals: preparedInput.toToken.decimals,
         slippagePercentage: 0,
       },
     });
@@ -61,6 +61,7 @@ export class SwapService {
       amount: request.amount,
       fromSymbol: request.fromSymbol,
       toSymbol: request.toSymbol,
+      chain: request.chain,
       rawCommand: request.rawCommand,
     };
   }
