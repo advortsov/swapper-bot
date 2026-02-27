@@ -29,6 +29,8 @@ dist-test/
 coverage/
 .env.*
 !.env.example
+.env.dev.local
+.env.prod.example
 build/
 target/
 .idea/
