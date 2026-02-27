@@ -17,8 +17,9 @@ const ZERO_X_VERSION = 'v2';
 const DEFAULT_ZERO_X_API_BASE_URL = 'https://api.0x.org';
 const DEFAULT_TAKER_ADDRESS = '0x0000000000000000000000000000000000010000';
 const BPS_PERCENT_MULTIPLIER = 100;
+type IEvmChainType = Exclude<ChainType, 'solana'>;
 const ZERO_X_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
-const CHAIN_ID_BY_CHAIN: Readonly<Record<ChainType, string>> = {
+const CHAIN_ID_BY_CHAIN: Readonly<Record<IEvmChainType, string>> = {
   ethereum: '1',
   arbitrum: '42161',
   base: '8453',
@@ -161,7 +162,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   private buildQuoteUrl(params: IQuoteRequest): URL {
     const url = new URL('/swap/allowance-holder/quote', this.apiBaseUrl);
 
-    url.searchParams.set('chainId', CHAIN_ID_BY_CHAIN[params.chain]);
+    url.searchParams.set('chainId', this.resolveChainId(params.chain));
     url.searchParams.set('sellToken', params.sellTokenAddress);
     url.searchParams.set('buyToken', params.buyTokenAddress);
     url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
@@ -185,7 +186,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   private buildSwapUrl(params: ISwapRequest): URL {
     const url = new URL('/swap/allowance-holder/quote', this.apiBaseUrl);
 
-    url.searchParams.set('chainId', CHAIN_ID_BY_CHAIN[params.chain]);
+    url.searchParams.set('chainId', this.resolveChainId(params.chain));
     url.searchParams.set('sellToken', params.sellTokenAddress);
     url.searchParams.set('buyToken', params.buyTokenAddress);
     url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
@@ -198,6 +199,14 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   private toSlippageBps(slippagePercentage: number): string {
     const slippageBps = Math.round(slippagePercentage * BPS_PERCENT_MULTIPLIER);
     return `${Math.max(slippageBps, 1)}`;
+  }
+
+  private resolveChainId(chain: ChainType): string {
+    if (chain === 'solana') {
+      throw new BusinessException('0x does not support Solana');
+    }
+
+    return CHAIN_ID_BY_CHAIN[chain];
   }
 
   private observeRequest(statusCode: string, startedAt: number): void {

@@ -45,12 +45,14 @@ curl http://localhost:3000/health
 ```text
 /price 10 ETH to USDC
 /price 10 ETH to USDC on arbitrum
+/price 1 SOL to USDC on solana
 /swap 0.1 ETH to USDC
 /swap 0.1 ETH to USDC on base
 ```
 
 `/price` возвращает лучший курс, число опрошенных провайдеров и список котировок по каждому провайдеру.
-Поддерживаемые EVM-сети: `ethereum` (по умолчанию), `arbitrum`, `base`, `optimism`.
+Поддерживаемые сети: `ethereum` (по умолчанию), `arbitrum`, `base`, `optimism`, `solana`.
+Для `solana` сейчас поддержан `/price`; `/swap on solana` пока отключен, потому что Solana WalletConnect flow вынесен в следующий этап.
 
 ## Проверки качества
 

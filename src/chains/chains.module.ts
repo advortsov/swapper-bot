@@ -9,21 +9,20 @@ import { EthereumChain } from './ethereum/ethereum.chain';
 import { EthereumModule } from './ethereum/ethereum.module';
 import { OptimismChain } from './optimism/optimism.chain';
 import { OptimismModule } from './optimism/optimism.module';
+import { SolanaChain } from './solana/solana.chain';
+import { SolanaModule } from './solana/solana.module';
 
 @Module({
-  imports: [EthereumModule, ArbitrumModule, BaseModule, OptimismModule],
+  imports: [EthereumModule, ArbitrumModule, BaseModule, OptimismModule, SolanaModule],
   providers: [
     {
       provide: CHAINS_TOKEN,
       useFactory: (
-        ethereumChain: EthereumChain,
-        arbitrumChain: ArbitrumChain,
-        baseChain: BaseChain,
-        optimismChain: OptimismChain,
-      ) => [ethereumChain, arbitrumChain, baseChain, optimismChain],
-      inject: [EthereumChain, ArbitrumChain, BaseChain, OptimismChain],
+        ...chains: [EthereumChain, ArbitrumChain, BaseChain, OptimismChain, SolanaChain]
+      ) => chains,
+      inject: [EthereumChain, ArbitrumChain, BaseChain, OptimismChain, SolanaChain],
     },
   ],
-  exports: [CHAINS_TOKEN, EthereumModule, ArbitrumModule, BaseModule, OptimismModule],
+  exports: [CHAINS_TOKEN, EthereumModule, ArbitrumModule, BaseModule, OptimismModule, SolanaModule],
 })
 export class ChainsModule {}

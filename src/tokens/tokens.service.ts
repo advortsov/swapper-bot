@@ -4,6 +4,7 @@ import { ARBITRUM_TOKENS_SEED } from './seed/arbitrum.tokens.seed';
 import { BASE_TOKENS_SEED } from './seed/base.tokens.seed';
 import { ETHEREUM_TOKENS_SEED } from './seed/ethereum.tokens.seed';
 import { OPTIMISM_TOKENS_SEED } from './seed/optimism.tokens.seed';
+import { SOLANA_TOKENS_SEED } from './seed/solana.tokens.seed';
 import type { ITokenSeed } from './seed/token-seed.interface';
 import { TokensRepository } from './tokens.repository';
 import type { ITokenRecord } from './tokens.repository';
@@ -17,6 +18,7 @@ export class TokensService implements OnModuleInit {
     arbitrum: ARBITRUM_TOKENS_SEED,
     base: BASE_TOKENS_SEED,
     optimism: OPTIMISM_TOKENS_SEED,
+    solana: SOLANA_TOKENS_SEED,
   };
 
   public constructor(private readonly tokensRepository: TokensRepository) {}

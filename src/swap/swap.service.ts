@@ -14,6 +14,12 @@ export class SwapService {
   ) {}
 
   public async createSwapSession(request: ISwapRequest): Promise<ISwapSessionResponse> {
+    if (request.chain === 'solana') {
+      throw new BusinessException(
+        'Свапы в сети solana пока не поддерживаются: WalletConnect для Solana отложен',
+      );
+    }
+
     const preparedInput = await this.priceQuoteService.prepare(
       this.toPriceRequest(request.userId, request),
     );

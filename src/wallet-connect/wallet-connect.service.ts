@@ -20,7 +20,9 @@ const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 const MIN_SWAP_TIMEOUT_SECONDS = 1;
 const DEFAULT_SWAP_SLIPPAGE = 0.5;
 const DEFAULT_APP_PUBLIC_URL = 'https://example.org';
-const CHAIN_NAMESPACE_BY_CHAIN: Readonly<Record<ChainType, string>> = {
+type IEvmChainType = Exclude<ChainType, 'solana'>;
+
+const CHAIN_NAMESPACE_BY_CHAIN: Readonly<Record<IEvmChainType, string>> = {
   ethereum: 'eip155:1',
   arbitrum: 'eip155:42161',
   base: 'eip155:8453',
@@ -76,6 +78,10 @@ export class WalletConnectService implements OnModuleInit {
     input: ICreateWalletConnectSessionInput,
   ): Promise<IWalletConnectSessionPublic> {
     this.ensureWalletConnectConfigured();
+    if (input.swapPayload.chain === 'solana') {
+      throw new BusinessException('WalletConnect для Solana пока не поддерживается');
+    }
+
     const signClient = await this.getSignClient();
     const { uri, approval } = await signClient.connect({
       requiredNamespaces: {

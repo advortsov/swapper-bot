@@ -14,8 +14,9 @@ import type {
 } from '../interfaces/aggregator.interface';
 
 const DEFAULT_PARASWAP_API_BASE_URL = 'https://api.paraswap.io';
+type IEvmChainType = Exclude<ChainType, 'solana'>;
 const PARASWAP_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
-const NETWORK_BY_CHAIN: Readonly<Record<ChainType, string>> = {
+const NETWORK_BY_CHAIN: Readonly<Record<IEvmChainType, string>> = {
   ethereum: '1',
   arbitrum: '42161',
   base: '8453',
@@ -141,7 +142,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       }
 
       const transactionUrl = new URL('/transactions/1', this.apiBaseUrl);
-      const network = NETWORK_BY_CHAIN[params.chain];
+      const network = this.resolveNetwork(params.chain);
       transactionUrl.pathname = `/transactions/${network}`;
       transactionUrl.searchParams.set('ignoreChecks', 'true');
 
@@ -185,7 +186,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   }
 
   private buildQuoteUrl(params: IQuoteRequest): URL {
-    const network = NETWORK_BY_CHAIN[params.chain];
+    const network = this.resolveNetwork(params.chain);
     const url = new URL('/prices', this.apiBaseUrl);
 
     url.searchParams.set('srcToken', this.normalizeToken(params.sellTokenAddress));
@@ -221,6 +222,14 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
     }
 
     return normalized;
+  }
+
+  private resolveNetwork(chain: ChainType): string {
+    if (chain === 'solana') {
+      throw new BusinessException('ParaSwap does not support Solana');
+    }
+
+    return NETWORK_BY_CHAIN[chain];
   }
 
   private parseGasUsd(value: string | undefined): number | null {

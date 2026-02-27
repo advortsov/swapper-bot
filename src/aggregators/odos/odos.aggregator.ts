@@ -16,8 +16,9 @@ import type {
 const DEFAULT_ODOS_API_BASE_URL = 'https://api.odos.xyz';
 const QUOTE_ENDPOINT_PATH = '/sor/quote/v2';
 const ASSEMBLE_ENDPOINT_PATH = '/sor/assemble';
+type IEvmChainType = Exclude<ChainType, 'solana'>;
 const ODOS_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
-const CHAIN_ID_BY_CHAIN: Readonly<Record<ChainType, number>> = {
+const CHAIN_ID_BY_CHAIN: Readonly<Record<IEvmChainType, number>> = {
   ethereum: 1,
   arbitrum: Number.parseInt('42161', 10),
   base: Number.parseInt('8453', 10),
@@ -240,7 +241,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
     slippageLimitPercent: number;
   }): IOdosQuoteRequest {
     return {
-      chainId: CHAIN_ID_BY_CHAIN[input.chain],
+      chainId: this.resolveChainId(input.chain),
       inputTokens: [
         {
           tokenAddress: this.normalizeTokenAddress(input.sellTokenAddress),
@@ -268,6 +269,14 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
     }
 
     return normalized;
+  }
+
+  private resolveChainId(chain: ChainType): number {
+    if (chain === 'solana') {
+      throw new BusinessException('Odos does not support Solana');
+    }
+
+    return CHAIN_ID_BY_CHAIN[chain];
   }
 
   private buildHeaders(): Record<string, string> {
