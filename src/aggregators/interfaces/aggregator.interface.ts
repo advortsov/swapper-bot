@@ -29,9 +29,12 @@ export interface ISwapRequest {
 }
 
 export interface ISwapTransaction {
+  kind: 'evm' | 'solana';
   to: string;
   data: string;
   value: string;
+  serializedTransaction?: string;
+  lastValidBlockHeight?: number;
 }
 
 export interface IAggregator {

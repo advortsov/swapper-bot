@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection, PublicKey, VersionedTransaction } from '@solana/web3.js';
 
 import { BusinessException } from '../../common/exceptions/business.exception';
 import type { ChainType, IChain } from '../interfaces/chain.interface';
@@ -26,6 +26,28 @@ export class SolanaChain implements IChain {
 
   public async getGasPrice(): Promise<bigint> {
     return Promise.resolve(DEFAULT_SIGNATURE_FEE_LAMPORTS);
+  }
+
+  public async broadcastSignedTransaction(
+    serializedTransaction: Uint8Array,
+    lastValidBlockHeight: number,
+  ): Promise<string> {
+    try {
+      const signature = await this.connection.sendRawTransaction(serializedTransaction);
+      const transaction = VersionedTransaction.deserialize(serializedTransaction);
+      await this.connection.confirmTransaction(
+        {
+          signature,
+          blockhash: transaction.message.recentBlockhash,
+          lastValidBlockHeight,
+        },
+        'confirmed',
+      );
+      return signature;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown Solana RPC error';
+      throw new BusinessException(`Failed to broadcast Solana transaction: ${message}`);
+    }
   }
 
   public async getTokenDecimals(tokenAddress: string): Promise<number> {

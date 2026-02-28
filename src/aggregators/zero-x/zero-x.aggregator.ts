@@ -138,6 +138,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
       }
 
       return {
+        kind: 'evm',
         to: response.body.transaction.to,
         data: response.body.transaction.data,
         value: response.body.transaction.value,

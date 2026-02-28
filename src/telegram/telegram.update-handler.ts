@@ -267,6 +267,53 @@ export class TelegramUpdateHandler {
     context: Context,
     session: Awaited<ReturnType<SwapService['createSwapSession']>>,
   ): Promise<void> {
+    if (session.chain === 'solana') {
+      await this.replySolanaSwapPrepared(context, session);
+      return;
+    }
+
+    await this.replyEvmSwapPrepared(context, session);
+  }
+
+  private async replySolanaSwapPrepared(
+    context: Context,
+    session: Awaited<ReturnType<SwapService['createSwapSession']>>,
+  ): Promise<void> {
+    const providerQuoteLines = session.providerQuotes.map(
+      (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${session.toSymbol}`,
+    );
+    await context.reply(
+      [
+        `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} -> ${session.toAmount} ${session.toSymbol}`,
+        `Сеть: ${session.chain}`,
+        `Выбранный агрегатор: ${session.aggregator}`,
+        `Провайдеров опрошено: ${session.providersPolled}`,
+        'Котировки провайдеров:',
+        ...providerQuoteLines,
+        `Session ID: ${session.sessionId}`,
+        'Открой ссылку ниже в Phantom для подключения и подписи транзакции.',
+        `Phantom link: ${session.walletConnectUri}`,
+        `Сессия истекает: ${session.expiresAt}`,
+      ].join('\n'),
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: 'Open in Phantom',
+                url: session.walletConnectUri,
+              },
+            ],
+          ],
+        },
+      },
+    );
+  }
+
+  private async replyEvmSwapPrepared(
+    context: Context,
+    session: Awaited<ReturnType<SwapService['createSwapSession']>>,
+  ): Promise<void> {
     const providerQuoteLines = session.providerQuotes.map(
       (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${session.toSymbol}`,
     );

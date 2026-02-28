@@ -129,12 +129,30 @@ describe('SwapService', () => {
     expect(result.walletConnectUri).toBe('wc:test');
   });
 
-  it('должен отклонять swap в сети solana до отдельной интеграции WalletConnect', async () => {
+  it('должен создавать swap-сессию в сети solana через WalletConnect', async () => {
     const priceQuoteService: Pick<
       PriceQuoteService,
       'prepare' | 'fetchQuoteSelection' | 'buildResponse'
     > = {
-      prepare: async (): Promise<IPreparedPriceInput> => preparedPriceInput,
+      prepare: async (): Promise<IPreparedPriceInput> => ({
+        ...preparedPriceInput,
+        chain: 'solana',
+        fromToken: {
+          address: 'So11111111111111111111111111111111111111112',
+          symbol: 'SOL',
+          decimals: 9,
+          name: 'Solana',
+          chain: 'solana',
+        },
+        toToken: {
+          address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+          symbol: 'USDC',
+          decimals: 6,
+          name: 'USD Coin',
+          chain: 'solana',
+        },
+        sellAmountBaseUnits: '1000000000',
+      }),
       fetchQuoteSelection: async (): Promise<IQuoteSelection> => quoteSelection,
       buildResponse: () => ({
         chain: 'solana',
@@ -148,29 +166,34 @@ describe('SwapService', () => {
         providerQuotes: [{ aggregator: 'jupiter', toAmount: '150', estimatedGasUsd: null }],
       }),
     };
+    const createdSessions: { chain: ChainType }[] = [];
     const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
-      createSession: async () => ({
-        sessionId: 'session-id',
-        uri: 'wc:test',
-        expiresAt: '2026-02-27T00:00:00.000Z',
-      }),
+      createSession: async (input) => {
+        createdSessions.push({ chain: input.swapPayload.chain });
+        return {
+          sessionId: 'session-id',
+          uri: 'wc:test-solana',
+          expiresAt: '2026-02-27T00:00:00.000Z',
+        };
+      },
     };
     const service = new SwapService(
       priceQuoteService as PriceQuoteService,
       walletConnectService as WalletConnectService,
     );
 
-    await expect(
-      service.createSwapSession({
-        userId: '123',
-        amount: '1',
-        fromSymbol: 'SOL',
-        toSymbol: 'USDC',
-        chain: 'solana',
-        rawCommand: '/swap 1 SOL to USDC on solana',
-      }),
-    ).rejects.toThrowError(
-      'Свапы в сети solana пока не поддерживаются: WalletConnect для Solana отложен',
-    );
+    const result = await service.createSwapSession({
+      userId: '123',
+      amount: '1',
+      fromSymbol: 'SOL',
+      toSymbol: 'USDC',
+      chain: 'solana',
+      rawCommand: '/swap 1 SOL to USDC on solana',
+    });
+
+    expect(createdSessions).toEqual([{ chain: 'solana' }]);
+    expect(result.walletConnectUri).toBe('wc:test-solana');
+    expect(result.chain).toBe('solana');
+    expect(result.aggregator).toBe('jupiter');
   });
 });

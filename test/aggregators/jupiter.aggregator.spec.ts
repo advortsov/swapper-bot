@@ -55,19 +55,43 @@ describe('JupiterAggregator', () => {
   });
 
   it('должен явно отклонять swap-транзакции для Solana до отдельной интеграции', async () => {
-    const aggregator = createAggregator(vi.fn());
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          outAmount: '8141855',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          swapTransaction: 'base64-transaction',
+          lastValidBlockHeight: 123_456,
+        }),
+      });
+    const aggregator = createAggregator(fetchMock);
 
-    await expect(
-      aggregator.buildSwapTransaction({
-        chain: 'solana',
-        sellTokenAddress: 'So11111111111111111111111111111111111111112',
-        buyTokenAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-        sellAmountBaseUnits: '100000000',
-        sellTokenDecimals: 9,
-        buyTokenDecimals: 6,
-        fromAddress: 'wallet',
-        slippagePercentage: 0.5,
-      }),
-    ).rejects.toThrowError('Свапы в сети solana пока не поддерживаются');
+    const transaction = await aggregator.buildSwapTransaction({
+      chain: 'solana',
+      sellTokenAddress: 'So11111111111111111111111111111111111111112',
+      buyTokenAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+      sellAmountBaseUnits: '100000000',
+      sellTokenDecimals: 9,
+      buyTokenDecimals: 6,
+      fromAddress: 'jdocuPgEAjMfihABsPgKEvYtsmMzjUHeq9LX4Hvs7f3',
+      slippagePercentage: 0.5,
+    });
+
+    expect(transaction).toEqual({
+      kind: 'solana',
+      to: '',
+      data: '',
+      value: '0',
+      serializedTransaction: 'base64-transaction',
+      lastValidBlockHeight: 123_456,
+    });
   });
 });

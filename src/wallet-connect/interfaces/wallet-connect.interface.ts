@@ -23,10 +23,30 @@ export interface IWalletConnectSession {
   expiresAt: number;
   pairingTopic?: string;
   swapPayload: IWalletConnectSwapPayload;
+  phantom?: IPhantomSessionState;
 }
 
 export interface IWalletConnectSessionPublic {
   sessionId: string;
   uri: string;
   expiresAt: string;
+}
+
+export interface IPhantomSessionState {
+  dappEncryptionPublicKey: string;
+  dappEncryptionSecretKey: string;
+  sharedSecret?: string;
+  phantomEncryptionPublicKey?: string;
+  phantomSession?: string;
+  walletAddress?: string;
+  lastValidBlockHeight?: number;
+}
+
+export interface IPhantomCallbackQuery {
+  sessionId: string;
+  phantom_encryption_public_key?: string;
+  nonce?: string;
+  data?: string;
+  errorCode?: string;
+  errorMessage?: string;
 }

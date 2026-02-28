@@ -48,11 +48,12 @@ curl http://localhost:3000/health
 /price 1 SOL to USDC on solana
 /swap 0.1 ETH to USDC
 /swap 0.1 ETH to USDC on base
+/swap 1 SOL to USDC on solana
 ```
 
 `/price` возвращает лучший курс, число опрошенных провайдеров и список котировок по каждому провайдеру.
 Поддерживаемые сети: `ethereum` (по умолчанию), `arbitrum`, `base`, `optimism`, `solana`.
-Для `solana` сейчас поддержан `/price`; `/swap on solana` пока отключен, потому что Solana WalletConnect flow вынесен в следующий этап.
+Для `solana` поддержаны `/price` и `/swap` через WalletConnect.
 
 ## Проверки качества
 

@@ -164,6 +164,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       }
 
       return {
+        kind: 'evm',
         to: transactionResponse.body.to,
         data: transactionResponse.body.data,
         value: transactionResponse.body.value,

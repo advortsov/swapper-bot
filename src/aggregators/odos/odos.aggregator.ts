@@ -204,6 +204,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
       }
 
       return {
+        kind: 'evm',
         to: assembleResponse.body.transaction.to,
         data: assembleResponse.body.transaction.data,
         value: assembleResponse.body.transaction.value,

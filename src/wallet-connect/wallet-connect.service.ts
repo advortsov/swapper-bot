@@ -11,32 +11,23 @@ import { BusinessException } from '../common/exceptions/business.exception';
 import { MetricsService } from '../metrics/metrics.service';
 import type {
   ICreateWalletConnectSessionInput,
+  IPhantomCallbackQuery,
   IWalletConnectSession,
   IWalletConnectSessionPublic,
 } from './interfaces/wallet-connect.interface';
+import {
+  CHAIN_CONFIG_BY_CHAIN,
+  DEFAULT_APP_PUBLIC_URL,
+  MIN_SWAP_TIMEOUT_SECONDS,
+  TELEGRAM_API_BASE_URL,
+  type IWalletConnectChainConfig,
+  WALLETCONNECT_ICON_URL,
+} from './wallet-connect.constants';
+import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
 import { WalletConnectSessionStore } from './wallet-connect.session-store';
 
 const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
-const MIN_SWAP_TIMEOUT_SECONDS = 1;
-const DEFAULT_SWAP_SLIPPAGE = 0.5;
-const DEFAULT_APP_PUBLIC_URL = 'https://example.org';
-type IEvmChainType = Exclude<ChainType, 'solana'>;
-
-const CHAIN_NAMESPACE_BY_CHAIN: Readonly<Record<IEvmChainType, string>> = {
-  ethereum: 'eip155:1',
-  arbitrum: 'eip155:42161',
-  base: 'eip155:8453',
-  optimism: 'eip155:10',
-};
-const WALLETCONNECT_ICON_URL = 'https://walletconnect.com/walletconnect-logo.png';
-const WALLETCONNECT_METHODS = [
-  'eth_sendTransaction',
-  'eth_signTransaction',
-  'personal_sign',
-  'eth_signTypedData',
-  'eth_signTypedData_v4',
-];
-const WALLETCONNECT_EVENTS = ['accountsChanged', 'chainChanged'];
+const TELEGRAM_PREVIEW_DISABLED = true;
 
 @Injectable()
 export class WalletConnectService implements OnModuleInit {
@@ -44,26 +35,28 @@ export class WalletConnectService implements OnModuleInit {
   private readonly projectId: string;
   private readonly appPublicUrl: string;
   private readonly swapTimeoutSeconds: number;
-  private readonly swapSlippage: number;
+  private readonly telegramBotToken: string;
   private signClient: SignClient | null = null;
   private readonly approvals = new Map<string, () => Promise<SessionTypes.Struct>>();
+
+  @Inject(AGGREGATORS_TOKEN)
+  private readonly aggregators!: readonly IAggregator[];
 
   public constructor(
     private readonly configService: ConfigService,
     private readonly sessionStore: WalletConnectSessionStore,
     private readonly metricsService: MetricsService,
-    @Inject(AGGREGATORS_TOKEN)
-    private readonly aggregators: readonly IAggregator[],
+    private readonly phantomService: WalletConnectPhantomService,
   ) {
     this.projectId = this.configService.get<string>('WC_PROJECT_ID') ?? '';
     this.appPublicUrl = this.configService.get<string>('APP_PUBLIC_URL') ?? DEFAULT_APP_PUBLIC_URL;
     this.swapTimeoutSeconds = this.resolveTimeoutSeconds();
-    this.swapSlippage = this.resolveSwapSlippage();
+    this.telegramBotToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '';
   }
 
   public async onModuleInit(): Promise<void> {
     if (this.projectId.trim() === '') {
-      this.logger.warn('WalletConnect is disabled: WC_PROJECT_ID is empty');
+      this.logger.warn('WalletConnect EVM flow is disabled: WC_PROJECT_ID is empty');
       return;
     }
 
@@ -77,18 +70,19 @@ export class WalletConnectService implements OnModuleInit {
   public async createSession(
     input: ICreateWalletConnectSessionInput,
   ): Promise<IWalletConnectSessionPublic> {
-    this.ensureWalletConnectConfigured();
     if (input.swapPayload.chain === 'solana') {
-      throw new BusinessException('WalletConnect для Solana пока не поддерживается');
+      return this.phantomService.createSession(input);
     }
 
+    this.ensureWalletConnectConfigured();
     const signClient = await this.getSignClient();
+    const chainConfig = this.getChainConfig(input.swapPayload.chain);
     const { uri, approval } = await signClient.connect({
       requiredNamespaces: {
-        eip155: {
-          methods: WALLETCONNECT_METHODS,
-          chains: [CHAIN_NAMESPACE_BY_CHAIN[input.swapPayload.chain]],
-          events: WALLETCONNECT_EVENTS,
+        [chainConfig.namespace]: {
+          methods: [...chainConfig.methods],
+          chains: [chainConfig.chainId],
+          events: [...chainConfig.events],
         },
       },
     });
@@ -106,19 +100,33 @@ export class WalletConnectService implements OnModuleInit {
       expiresAt,
       swapPayload: {
         ...input.swapPayload,
-        slippagePercentage: this.swapSlippage,
       },
     };
 
     this.sessionStore.save(session);
     this.approvals.set(sessionId, approval);
     this.metricsService.incrementSwapRequest('initiated');
+    void this.handleSessionLifecycle(sessionId);
 
     return {
       sessionId: session.sessionId,
       uri: session.uri,
       expiresAt: new Date(session.expiresAt).toISOString(),
     };
+  }
+
+  public getPhantomConnectUrl(sessionId: string): string {
+    return this.phantomService.getPhantomConnectUrl(sessionId);
+  }
+
+  public async handlePhantomConnectCallback(query: IPhantomCallbackQuery): Promise<string> {
+    return this.phantomService.handleConnectCallback(query);
+  }
+
+  public async handlePhantomSignCallback(
+    query: IPhantomCallbackQuery,
+  ): Promise<{ explorerUrl: string; transactionHash: string }> {
+    return this.phantomService.handleSignCallback(query);
   }
 
   public async buildSwapTransaction(
@@ -132,30 +140,15 @@ export class WalletConnectService implements OnModuleInit {
       throw new BusinessException('WalletConnect session is not found or expired');
     }
 
-    const aggregator = this.aggregators.find(
-      (candidateAggregator) => candidateAggregator.name === session.swapPayload.aggregatorName,
-    );
-
-    if (!aggregator) {
-      this.metricsService.incrementSwapRequest('error');
-      throw new BusinessException(
-        `Aggregator ${session.swapPayload.aggregatorName} is not available for swap`,
-      );
+    if (session.swapPayload.chain === 'solana') {
+      return this.phantomService.buildSwapTransaction(sessionId, walletAddress);
     }
+
+    const aggregator = this.resolveAggregator(session.swapPayload.aggregatorName);
 
     try {
       await this.waitForApproval(sessionId, session.expiresAt);
-
-      const transaction = await aggregator.buildSwapTransaction({
-        chain: session.swapPayload.chain,
-        sellTokenAddress: session.swapPayload.sellTokenAddress,
-        buyTokenAddress: session.swapPayload.buyTokenAddress,
-        sellAmountBaseUnits: session.swapPayload.sellAmountBaseUnits,
-        sellTokenDecimals: session.swapPayload.sellTokenDecimals,
-        buyTokenDecimals: session.swapPayload.buyTokenDecimals,
-        fromAddress: walletAddress,
-        slippagePercentage: session.swapPayload.slippagePercentage,
-      });
+      const transaction = await this.buildTransactionForSession(session, aggregator, walletAddress);
 
       this.sessionStore.delete(sessionId);
       this.approvals.delete(sessionId);
@@ -170,7 +163,7 @@ export class WalletConnectService implements OnModuleInit {
 
   private ensureWalletConnectConfigured(): void {
     if (this.projectId.trim() === '') {
-      throw new BusinessException('WC_PROJECT_ID is required for /swap');
+      throw new BusinessException('WC_PROJECT_ID is required for EVM /swap');
     }
   }
 
@@ -183,17 +176,6 @@ export class WalletConnectService implements OnModuleInit {
     }
 
     return parsedTimeout;
-  }
-
-  private resolveSwapSlippage(): number {
-    const rawSlippage = this.configService.get<string>('SWAP_SLIPPAGE');
-    const parsedSlippage = Number.parseFloat(rawSlippage ?? `${DEFAULT_SWAP_SLIPPAGE}`);
-
-    if (!Number.isFinite(parsedSlippage) || parsedSlippage <= 0) {
-      return DEFAULT_SWAP_SLIPPAGE;
-    }
-
-    return parsedSlippage;
   }
 
   private async getSignClient(): Promise<SignClient> {
@@ -220,7 +202,10 @@ export class WalletConnectService implements OnModuleInit {
     };
   }
 
-  private async waitForApproval(sessionId: string, expiresAt: number): Promise<void> {
+  private async waitForApproval(
+    sessionId: string,
+    expiresAt: number,
+  ): Promise<SessionTypes.Struct> {
     const approvalCallback = this.approvals.get(sessionId);
 
     if (!approvalCallback) {
@@ -234,7 +219,49 @@ export class WalletConnectService implements OnModuleInit {
       }, timeout);
     });
 
-    await Promise.race([approvalCallback(), timeoutPromise]);
+    return Promise.race([approvalCallback(), timeoutPromise]);
+  }
+
+  private async handleSessionLifecycle(sessionId: string): Promise<void> {
+    const session = this.sessionStore.get(sessionId);
+
+    if (!session) {
+      return;
+    }
+
+    try {
+      const approvedSession = await this.waitForApproval(sessionId, session.expiresAt);
+      const walletAddress = this.extractWalletAddress(approvedSession, session.swapPayload.chain);
+      const aggregator = this.resolveAggregator(session.swapPayload.aggregatorName);
+      const transaction = await this.buildTransactionForSession(session, aggregator, walletAddress);
+      const transactionHash = await this.requestWalletExecution(
+        approvedSession,
+        session.swapPayload.chain,
+        walletAddress,
+        transaction,
+      );
+      const explorerUrl = this.buildExplorerUrl(session.swapPayload.chain, transactionHash);
+
+      await this.sendTelegramMessage(
+        session.userId,
+        [
+          'Своп отправлен.',
+          `Сеть: ${session.swapPayload.chain}`,
+          `Агрегатор: ${session.swapPayload.aggregatorName}`,
+          `Tx: <code>${this.escapeHtml(transactionHash)}</code>`,
+          `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
+        ].join('\n'),
+      );
+      this.metricsService.incrementSwapRequest('success');
+    } catch (error: unknown) {
+      const message = this.getErrorMessage(error);
+      this.logger.error(`WalletConnect swap failed: ${message}`);
+      this.metricsService.incrementSwapRequest('error');
+      await this.sendTelegramMessage(session.userId, `Ошибка свопа: ${this.escapeHtml(message)}`);
+    } finally {
+      this.sessionStore.delete(sessionId);
+      this.approvals.delete(sessionId);
+    }
   }
 
   private registerClientEvents(signClient: SignClient): void {
@@ -255,5 +282,194 @@ export class WalletConnectService implements OnModuleInit {
         this.logger.warn(`WalletConnect session deleted: ${topic}`);
       });
     }
+  }
+
+  private getChainConfig(chain: ChainType): IWalletConnectChainConfig {
+    return CHAIN_CONFIG_BY_CHAIN[chain];
+  }
+
+  private resolveAggregator(aggregatorName: string): IAggregator {
+    const aggregator = this.aggregators.find(
+      (candidateAggregator) => candidateAggregator.name === aggregatorName,
+    );
+
+    if (!aggregator) {
+      throw new BusinessException(`Aggregator ${aggregatorName} is not available for swap`);
+    }
+
+    return aggregator;
+  }
+
+  private buildTransactionForSession(
+    session: IWalletConnectSession,
+    aggregator: IAggregator,
+    walletAddress: string,
+  ): Promise<ISwapTransaction> {
+    return aggregator.buildSwapTransaction({
+      chain: session.swapPayload.chain,
+      sellTokenAddress: session.swapPayload.sellTokenAddress,
+      buyTokenAddress: session.swapPayload.buyTokenAddress,
+      sellAmountBaseUnits: session.swapPayload.sellAmountBaseUnits,
+      sellTokenDecimals: session.swapPayload.sellTokenDecimals,
+      buyTokenDecimals: session.swapPayload.buyTokenDecimals,
+      fromAddress: walletAddress,
+      slippagePercentage: session.swapPayload.slippagePercentage,
+    });
+  }
+
+  private extractWalletAddress(session: SessionTypes.Struct, chain: ChainType): string {
+    const chainConfig = this.getChainConfig(chain);
+    const accounts = session.namespaces[chainConfig.namespace]?.accounts ?? [];
+    const account = accounts[0];
+
+    if (!account) {
+      throw new BusinessException(`WalletConnect session for ${chain} does not contain accounts`);
+    }
+
+    const walletAddress = account.split(':').at(-1);
+
+    if (!walletAddress) {
+      throw new BusinessException(`WalletConnect account format is invalid for ${chain}`);
+    }
+
+    return walletAddress;
+  }
+
+  private async requestWalletExecution(
+    session: SessionTypes.Struct,
+    chain: ChainType,
+    walletAddress: string,
+    transaction: ISwapTransaction,
+  ): Promise<string> {
+    const signClient = await this.getSignClient();
+    const chainConfig = this.getChainConfig(chain);
+
+    if (transaction.kind === 'solana') {
+      const serializedTransaction = transaction.serializedTransaction;
+
+      if (!serializedTransaction) {
+        throw new BusinessException('Solana transaction payload is missing');
+      }
+
+      const result = await signClient.request({
+        topic: session.topic,
+        chainId: chainConfig.chainId,
+        request: {
+          method: 'solana_signAndSendTransaction',
+          params: {
+            transaction: serializedTransaction,
+          },
+        },
+      });
+
+      return this.parseTransactionResult(result);
+    }
+
+    const result = await signClient.request({
+      topic: session.topic,
+      chainId: chainConfig.chainId,
+      request: {
+        method: 'eth_sendTransaction',
+        params: [
+          {
+            from: walletAddress,
+            to: transaction.to,
+            data: transaction.data,
+            value: transaction.value,
+          },
+        ],
+      },
+    });
+
+    return this.parseTransactionResult(result);
+  }
+
+  private parseTransactionResult(result: unknown): string {
+    if (typeof result === 'string' && result.trim() !== '') {
+      return result;
+    }
+
+    if (typeof result === 'object' && result !== null) {
+      const candidate = result as Record<string, unknown>;
+
+      if (typeof candidate['signature'] === 'string' && candidate['signature'].trim() !== '') {
+        return candidate['signature'];
+      }
+
+      if (typeof candidate['txHash'] === 'string' && candidate['txHash'].trim() !== '') {
+        return candidate['txHash'];
+      }
+    }
+
+    throw new BusinessException('WalletConnect transaction result is invalid');
+  }
+
+  private buildExplorerUrl(chain: ChainType, transactionHash: string): string {
+    const explorerUrlByChain: Readonly<Record<ChainType, string>> = {
+      ethereum:
+        this.configService.get<string>('EXPLORER_URL_ETHEREUM') ?? 'https://etherscan.io/tx/',
+      arbitrum:
+        this.configService.get<string>('EXPLORER_URL_ARBITRUM') ?? 'https://arbiscan.io/tx/',
+      base: this.configService.get<string>('EXPLORER_URL_BASE') ?? 'https://basescan.org/tx/',
+      optimism:
+        this.configService.get<string>('EXPLORER_URL_OPTIMISM') ??
+        'https://optimistic.etherscan.io/tx/',
+      solana: this.configService.get<string>('EXPLORER_URL_SOLANA') ?? 'https://solscan.io/tx/',
+    };
+
+    const baseUrl = explorerUrlByChain[chain];
+
+    if (baseUrl.trim() === '') {
+      throw new BusinessException(`Explorer URL for chain ${chain} is not configured`);
+    }
+
+    return `${baseUrl}${transactionHash}`;
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof BusinessException) {
+      return error.message;
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return 'Unknown internal error';
+  }
+
+  private async sendTelegramMessage(chatId: string, text: string): Promise<void> {
+    if (this.telegramBotToken.trim() === '') {
+      return;
+    }
+
+    const response = await fetch(
+      `${TELEGRAM_API_BASE_URL}/bot${this.telegramBotToken}/sendMessage`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: TELEGRAM_PREVIEW_DISABLED,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const body = await response.text();
+      this.logger.warn(`Telegram sendMessage failed: ${response.status} ${body}`);
+    }
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
   }
 }

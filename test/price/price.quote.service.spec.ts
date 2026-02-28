@@ -77,6 +77,7 @@ class FakeAggregator implements IAggregator {
 
   public async buildSwapTransaction(_params: ISwapRequest): Promise<ISwapTransaction> {
     return {
+      kind: 'evm',
       to: '',
       data: '',
       value: '0',

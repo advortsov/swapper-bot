@@ -95,6 +95,7 @@ describe('OdosAggregator', () => {
     });
 
     expect(transaction).toEqual({
+      kind: 'evm',
       to: '0x1111111111111111111111111111111111111111',
       data: '0xdeadbeef',
       value: '0',
