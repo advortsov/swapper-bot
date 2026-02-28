@@ -17,9 +17,12 @@ async function bootstrap(): Promise<void> {
 
   // Increase max URL length for Phantom wallet callbacks with long data params
   const httpAdapter = app.getHttpAdapter() as {
-    getInstance(): { setMaxUrlLength: (length: number) => void };
+    getHttpServer(): { _maxUrlLength?: number; setMaxUrlLength?: (length: number) => void };
   };
-  httpAdapter.getInstance().setMaxUrlLength(MAX_URL_LENGTH);
+  const httpServer = httpAdapter.getHttpServer();
+  if (httpServer.setMaxUrlLength) {
+    httpServer.setMaxUrlLength(MAX_URL_LENGTH);
+  }
 
   await app.listen(port);
 
