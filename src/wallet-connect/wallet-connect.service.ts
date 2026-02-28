@@ -439,6 +439,30 @@ export class WalletConnectService implements OnModuleInit {
       return error.message;
     }
 
+    // WalletConnect errors often come as plain objects
+    if (typeof error === 'object' && error !== null) {
+      const errorObj = error as Record<string, unknown>;
+
+      // Log the full error object for debugging
+      this.logger.error(`Full error object: ${JSON.stringify(errorObj)}`);
+
+      if (typeof errorObj['message'] === 'string') {
+        return errorObj['message'];
+      }
+
+      if (typeof errorObj['code'] === 'string') {
+        return `WalletConnect error: ${errorObj['code']}`;
+      }
+
+      if (typeof errorObj['data'] === 'string') {
+        return `WalletConnect error: ${errorObj['data']}`;
+      }
+    }
+
+    if (typeof error === 'string') {
+      return error;
+    }
+
     return 'Unknown internal error';
   }
 
