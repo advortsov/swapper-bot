@@ -360,9 +360,9 @@ export class TelegramUpdateHandler {
     try {
       await context.replyWithHTML(
         [
-          'Прямые deep links (если универсальные кнопки не сработали):',
-          `<a href="${walletConnectLinks.metamaskDirect}">Open in MetaMask app (direct)</a>`,
-          `<a href="${walletConnectLinks.trustWalletDirect}">Open in Trust Wallet app (direct)</a>`,
+          'Прямые ссылки (если кнопки выше не открыли кошелёк):',
+          `<a href="${walletConnectLinks.metamaskDirect}">MetaMask (direct)</a>`,
+          `<a href="${walletConnectLinks.trustWalletDirect}">Trust Wallet (direct)</a>`,
         ].join('\n'),
       );
     } catch (error: unknown) {
@@ -371,7 +371,7 @@ export class TelegramUpdateHandler {
 
       await context.reply(
         [
-          'Прямые deep links (скопируй в браузер вручную):',
+          'Прямые ссылки (скопируй в браузер):',
           walletConnectLinks.metamaskDirect,
           walletConnectLinks.trustWalletDirect,
         ].join('\n'),
