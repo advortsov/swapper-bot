@@ -247,19 +247,15 @@ export class TelegramUpdateHandler {
 
   private buildWalletConnectLinks(walletConnectUri: string): {
     metamask: string;
-    metamaskDirect: string;
     metamaskLegacy: string;
     trustWallet: string;
-    trustWalletDirect: string;
   } {
     const encodedUri = encodeURIComponent(walletConnectUri);
 
     return {
       metamask: `https://link.metamask.io/wc?uri=${encodedUri}`,
-      metamaskDirect: `metamask://wc?uri=${encodedUri}`,
       metamaskLegacy: `https://metamask.app.link/wc?uri=${encodedUri}`,
       trustWallet: `https://link.trustwallet.com/wc?uri=${encodedUri}`,
-      trustWalletDirect: `trust://wc?uri=${encodedUri}`,
     };
   }
 
@@ -356,26 +352,5 @@ export class TelegramUpdateHandler {
         },
       },
     );
-
-    try {
-      await context.replyWithHTML(
-        [
-          'Прямые ссылки (если кнопки выше не открыли кошелёк):',
-          `<a href="${walletConnectLinks.metamaskDirect}">MetaMask (direct)</a>`,
-          `<a href="${walletConnectLinks.trustWalletDirect}">Trust Wallet (direct)</a>`,
-        ].join('\n'),
-      );
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      this.logger.warn(`Failed to send direct deep links: ${message}`);
-
-      await context.reply(
-        [
-          'Прямые ссылки (скопируй в браузер):',
-          walletConnectLinks.metamaskDirect,
-          walletConnectLinks.trustWalletDirect,
-        ].join('\n'),
-      );
-    }
   }
 }
