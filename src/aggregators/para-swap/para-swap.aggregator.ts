@@ -30,6 +30,7 @@ const WETH_DECIMALS = '18';
 const HEALTHCHECK_SELL_AMOUNT = '1000000000000000';
 const ZERO_BIGINT = 0n;
 const REQUEST_TIMEOUT_MS = 10_000;
+const ERROR_BODY_MAX_LENGTH = 300;
 
 interface IParaSwapPriceRoute {
   destAmount: string;
@@ -264,7 +265,13 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       const parsedBody = (await response.json()) as unknown;
 
       if (!response.ok) {
-        throw new BusinessException(`Aggregator request failed with status ${response.status}`);
+        const errorDetail =
+          typeof parsedBody === 'object' && parsedBody !== null
+            ? JSON.stringify(parsedBody).slice(0, ERROR_BODY_MAX_LENGTH)
+            : '';
+        throw new BusinessException(
+          `Aggregator request failed with status ${response.status}${errorDetail ? `: ${errorDetail}` : ''}`,
+        );
       }
 
       return {

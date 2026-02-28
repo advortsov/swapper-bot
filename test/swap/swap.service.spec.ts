@@ -1,3 +1,4 @@
+import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it } from 'vitest';
 
 import type { IQuoteResponse } from '../../src/aggregators/interfaces/aggregator.interface';
@@ -99,7 +100,9 @@ describe('SwapService', () => {
         };
       },
     };
+    const configService = { get: () => '0.5' } as unknown as ConfigService;
     const service = new SwapService(
+      configService,
       priceQuoteService as PriceQuoteService,
       walletConnectService as WalletConnectService,
     );
@@ -177,7 +180,9 @@ describe('SwapService', () => {
         };
       },
     };
+    const configService = { get: () => '0.5' } as unknown as ConfigService;
     const service = new SwapService(
+      configService,
       priceQuoteService as PriceQuoteService,
       walletConnectService as WalletConnectService,
     );

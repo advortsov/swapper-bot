@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { BusinessException } from '../common/exceptions/business.exception';
 import type { IPriceRequest } from '../price/interfaces/price.interface';
@@ -6,12 +7,23 @@ import { PriceQuoteService } from '../price/price.quote.service';
 import type { ISwapRequest, ISwapSessionResponse } from './interfaces/swap.interface';
 import { WalletConnectService } from '../wallet-connect/wallet-connect.service';
 
+const DEFAULT_SWAP_SLIPPAGE = 0.5;
+
 @Injectable()
 export class SwapService {
+  private readonly swapSlippage: number;
+
   public constructor(
+    private readonly configService: ConfigService,
     private readonly priceQuoteService: PriceQuoteService,
     private readonly walletConnectService: WalletConnectService,
-  ) {}
+  ) {
+    const rawSlippage = Number.parseFloat(
+      this.configService.get<string>('SWAP_SLIPPAGE') ?? `${DEFAULT_SWAP_SLIPPAGE}`,
+    );
+    this.swapSlippage =
+      Number.isFinite(rawSlippage) && rawSlippage > 0 ? rawSlippage : DEFAULT_SWAP_SLIPPAGE;
+  }
 
   public async createSwapSession(request: ISwapRequest): Promise<ISwapSessionResponse> {
     const preparedInput = await this.priceQuoteService.prepare(
@@ -34,7 +46,7 @@ export class SwapService {
         sellAmountBaseUnits: preparedInput.sellAmountBaseUnits,
         sellTokenDecimals: preparedInput.fromToken.decimals,
         buyTokenDecimals: preparedInput.toToken.decimals,
-        slippagePercentage: 0,
+        slippagePercentage: this.swapSlippage,
       },
     });
 
