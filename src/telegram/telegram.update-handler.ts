@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import QRCode from 'qrcode';
 import { Context, Telegraf } from 'telegraf';
+import { Input } from 'telegraf';
 import type { Message } from 'telegraf/typings/core/types/typegram';
 
 import {
@@ -245,6 +247,23 @@ export class TelegramUpdateHandler {
     return normalizedChain;
   }
 
+  private async sendWalletConnectQr(context: Context, walletConnectUri: string): Promise<void> {
+    try {
+      const qrBuffer = await QRCode.toBuffer(walletConnectUri, {
+        type: 'png',
+        width: 512,
+        margin: 2,
+      });
+
+      await context.replyWithPhoto(Input.fromBuffer(qrBuffer, 'qr.png'), {
+        caption: 'Отсканируй QR в MetaMask или Trust Wallet для подключения.',
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this.logger.warn(`Failed to send WC QR code: ${message}`);
+    }
+  }
+
   private buildWalletConnectLinks(walletConnectUri: string): {
     metamask: string;
     metamaskLegacy: string;
@@ -323,9 +342,7 @@ export class TelegramUpdateHandler {
         `Провайдеров: ${session.providersPolled}`,
         ...providerQuoteLines,
         '',
-        'Нажми кнопку ниже для подключения кошелька.',
-        'Если кнопка не открыла кошелёк — скопируй URI и вставь в MetaMask → QR-сканер:',
-        `<code>${session.walletConnectUri}</code>`,
+        'Нажми кнопку или отсканируй QR в кошельке.',
         `Сессия истекает: ${session.expiresAt}`,
       ].join('\n'),
       {
@@ -351,5 +368,7 @@ export class TelegramUpdateHandler {
         },
       },
     );
+
+    await this.sendWalletConnectQr(context, session.walletConnectUri);
   }
 }
