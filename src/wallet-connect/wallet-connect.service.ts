@@ -4,6 +4,8 @@ import SignClient from '@walletconnect/sign-client';
 import type { SessionTypes } from '@walletconnect/types';
 import { randomUUID } from 'node:crypto';
 
+import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
+import { WalletConnectSessionStore } from './wallet-connect.session-store';
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
 import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
 import type { ChainType } from '../chains/interfaces/chain.interface';
@@ -23,8 +25,7 @@ import {
   type IWalletConnectChainConfig,
   WALLETCONNECT_ICON_URL,
 } from './wallet-connect.constants';
-import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
-import { WalletConnectSessionStore } from './wallet-connect.session-store';
+import { getWalletConnectErrorMessage, escapeHtml } from './wallet-connect.utils';
 
 const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 const TELEGRAM_PREVIEW_DISABLED = true;
@@ -431,39 +432,12 @@ export class WalletConnectService implements OnModuleInit {
   }
 
   private getErrorMessage(error: unknown): string {
-    if (error instanceof BusinessException) {
-      return error.message;
-    }
-
-    if (error instanceof Error) {
-      return error.message;
-    }
-
-    // WalletConnect errors often come as plain objects
-    if (typeof error === 'object' && error !== null) {
-      const errorObj = error as Record<string, unknown>;
-
-      // Log the full error object for debugging
+    const errorObj =
+      typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : null;
+    if (errorObj) {
       this.logger.error(`Full error object: ${JSON.stringify(errorObj)}`);
-
-      if (typeof errorObj['message'] === 'string') {
-        return errorObj['message'];
-      }
-
-      if (typeof errorObj['code'] === 'string') {
-        return `WalletConnect error: ${errorObj['code']}`;
-      }
-
-      if (typeof errorObj['data'] === 'string') {
-        return `WalletConnect error: ${errorObj['data']}`;
-      }
     }
-
-    if (typeof error === 'string') {
-      return error;
-    }
-
-    return 'Unknown internal error';
+    return getWalletConnectErrorMessage(error);
   }
 
   private async sendTelegramMessage(chatId: string, text: string): Promise<void> {
@@ -494,10 +468,6 @@ export class WalletConnectService implements OnModuleInit {
   }
 
   private escapeHtml(value: string): string {
-    return value
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;');
+    return escapeHtml(value);
   }
 }
