@@ -5,7 +5,11 @@ import { BusinessException } from '../common/exceptions/business.exception';
 import type { IPriceRequest } from '../price/interfaces/price.interface';
 import { PriceQuoteService } from '../price/price.quote.service';
 import { UserSettingsService } from '../settings/user-settings.service';
-import type { ISwapRequest, ISwapSessionResponse } from './interfaces/swap.interface';
+import type {
+  ISwapQuotesResponse,
+  ISwapRequest,
+  ISwapSessionResponse,
+} from './interfaces/swap.interface';
 import { WalletConnectService } from '../wallet-connect/wallet-connect.service';
 
 const DEFAULT_SWAP_SLIPPAGE = 0.5;
@@ -28,14 +32,9 @@ export class SwapService {
       Number.isFinite(rawSlippage) && rawSlippage > 0 ? rawSlippage : DEFAULT_SWAP_SLIPPAGE;
   }
 
-  public async createSwapSession(request: ISwapRequest): Promise<ISwapSessionResponse> {
+  public async getSwapQuotes(request: ISwapRequest): Promise<ISwapQuotesResponse> {
     const userSettings = await this.userSettingsService.getSettings(request.userId);
-    const slippage = userSettings.slippage > 0 ? userSettings.slippage : this.fallbackSlippage;
     const preferredAggregator = userSettings.preferredAggregator;
-
-    this.logger.log(
-      `Swap session for user ${request.userId}: slippage=${slippage}%, aggregator=${preferredAggregator}`,
-    );
 
     const preparedInput = await this.priceQuoteService.prepare(
       this.toPriceRequest(request.userId, request),
@@ -43,6 +42,39 @@ export class SwapService {
     const quoteSelection = await this.priceQuoteService.fetchQuoteSelection(
       preparedInput,
       preferredAggregator,
+    );
+    const priceResponse = this.priceQuoteService.buildResponse(preparedInput, quoteSelection);
+
+    return {
+      chain: priceResponse.chain,
+      aggregator: priceResponse.aggregator,
+      fromSymbol: priceResponse.fromSymbol,
+      toSymbol: priceResponse.toSymbol,
+      fromAmount: priceResponse.fromAmount,
+      toAmount: priceResponse.toAmount,
+      providersPolled: priceResponse.providersPolled,
+      providerQuotes: priceResponse.providerQuotes,
+    };
+  }
+
+  public async createSwapSession(
+    request: ISwapRequest,
+    forceAggregator?: string,
+  ): Promise<ISwapSessionResponse> {
+    const userSettings = await this.userSettingsService.getSettings(request.userId);
+    const slippage = userSettings.slippage > 0 ? userSettings.slippage : this.fallbackSlippage;
+    const aggregator = forceAggregator ?? userSettings.preferredAggregator;
+
+    this.logger.log(
+      `Swap session for user ${request.userId}: slippage=${slippage}%, aggregator=${aggregator}`,
+    );
+
+    const preparedInput = await this.priceQuoteService.prepare(
+      this.toPriceRequest(request.userId, request),
+    );
+    const quoteSelection = await this.priceQuoteService.fetchQuoteSelection(
+      preparedInput,
+      aggregator,
     );
     const bestQuote = quoteSelection.bestQuote;
 
@@ -64,17 +96,8 @@ export class SwapService {
       },
     });
 
-    const priceResponse = this.priceQuoteService.buildResponse(preparedInput, quoteSelection);
-
     return {
-      chain: priceResponse.chain,
-      aggregator: priceResponse.aggregator,
-      fromSymbol: priceResponse.fromSymbol,
-      toSymbol: priceResponse.toSymbol,
-      fromAmount: priceResponse.fromAmount,
-      toAmount: priceResponse.toAmount,
-      providersPolled: priceResponse.providersPolled,
-      providerQuotes: priceResponse.providerQuotes,
+      chain: request.chain,
       walletConnectUri: walletConnectSession.uri,
       sessionId: walletConnectSession.sessionId,
       expiresAt: walletConnectSession.expiresAt,

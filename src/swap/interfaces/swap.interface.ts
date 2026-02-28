@@ -10,7 +10,7 @@ export interface ISwapRequest {
   rawCommand: string;
 }
 
-export interface ISwapSessionResponse {
+export interface ISwapQuotesResponse {
   chain: ChainType;
   aggregator: string;
   fromSymbol: string;
@@ -19,6 +19,10 @@ export interface ISwapSessionResponse {
   toAmount: string;
   providersPolled: number;
   providerQuotes: readonly IProviderQuote[];
+}
+
+export interface ISwapSessionResponse {
+  chain: ChainType;
   walletConnectUri: string;
   sessionId: string;
   expiresAt: string;

@@ -3,7 +3,7 @@ import QRCode from 'qrcode';
 import { Context, Telegraf } from 'telegraf';
 import { Input } from 'telegraf';
 import { message } from 'telegraf/filters';
-import type { Message } from 'telegraf/typings/core/types/typegram';
+import type { InlineKeyboardButton, Message } from 'telegraf/typings/core/types/typegram';
 
 import {
   DEFAULT_CHAIN,
@@ -17,6 +17,7 @@ import type { IPriceCommandDto } from './dto/price-command.dto';
 import { SwapService } from '../swap/swap.service';
 import type { ISwapCommandDto } from './dto/swap-command.dto';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
+import type { ISwapRequest, ISwapSessionResponse } from '../swap/interfaces/swap.interface';
 
 const PRICE_COMMAND_REGEX =
   /^\/price\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)(?:\s+on\s+([a-zA-Z0-9_-]+))?$/i;
@@ -29,9 +30,21 @@ const FROM_SYMBOL_MATCH_INDEX = 2;
 const TO_SYMBOL_MATCH_INDEX = 3;
 const CHAIN_MATCH_INDEX = 4;
 
+const SWAP_CALLBACK_PREFIX = 'sw:';
+const PENDING_SWAP_TTL_MS = 300_000;
+const QR_CODE_WIDTH = 512;
+const QR_CODE_MARGIN = 2;
+
+interface IPendingSwap {
+  request: ISwapRequest;
+  createdAt: number;
+}
+
 @Injectable()
 export class TelegramUpdateHandler {
   private readonly logger = new Logger(TelegramUpdateHandler.name);
+  private readonly pendingSwaps = new Map<string, IPendingSwap>();
+  private swapCounter = 0;
 
   public constructor(
     private readonly priceService: PriceService,
@@ -45,6 +58,9 @@ export class TelegramUpdateHandler {
     bot.command('price', async (context: Context) => this.handlePrice(context));
     bot.command('swap', async (context: Context) => this.handleSwap(context));
     this.settingsHandler.register(bot);
+    bot.action(new RegExp(`^${SWAP_CALLBACK_PREFIX}`), async (context: Context) =>
+      this.handleSwapCallback(context),
+    );
     bot.on(message('text'), async (context: Context) => this.handleText(context));
   }
 
@@ -135,15 +151,10 @@ export class TelegramUpdateHandler {
         ].join('\n'),
       );
     } catch (error: unknown) {
-      const message =
-        error instanceof BusinessException
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'Внутренняя ошибка';
+      const errorMessage = this.getErrorMessage(error);
 
-      this.logger.error(`Price command failed: ${message}`);
-      await context.reply(`Ошибка: ${message}`);
+      this.logger.error(`Price command failed: ${errorMessage}`);
+      await context.reply(`Ошибка: ${errorMessage}`);
     }
   }
 
@@ -169,34 +180,165 @@ export class TelegramUpdateHandler {
         username: from.username ?? null,
       });
 
-      const session = await this.swapService.createSwapSession({
+      const request: ISwapRequest = {
         chain: command.chain,
         userId: from.id.toString(),
         amount: command.amount,
         fromSymbol: command.fromSymbol,
         toSymbol: command.toSymbol,
         rawCommand: text,
-      });
-      await this.replySwapPrepared(context, session);
-    } catch (error: unknown) {
-      const message =
-        error instanceof BusinessException
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'Внутренняя ошибка';
+      };
 
-      this.logger.error(`Swap command failed: ${message}`);
-      await context.reply(`Ошибка: ${message}`);
+      const quotes = await this.swapService.getSwapQuotes(request);
+
+      this.swapCounter += 1;
+      const swapId = `${from.id}_${this.swapCounter}`;
+      this.pendingSwaps.set(swapId, { request, createdAt: Date.now() });
+      this.cleanExpiredSwaps();
+
+      const buttons: InlineKeyboardButton[][] = quotes.providerQuotes.map((quote) => {
+        const isBest = quote.aggregator === quotes.aggregator;
+        const prefix = isBest ? '\u2B50 ' : '';
+
+        return [
+          {
+            text: `${prefix}${quote.aggregator}: ${quote.toAmount} ${quotes.toSymbol}`,
+            callback_data: `sw:${swapId}:${quote.aggregator}`,
+          },
+        ];
+      });
+
+      await context.reply(
+        [
+          `Котировки для ${quotes.fromAmount} ${quotes.fromSymbol} \u2192 ${quotes.toAmount} ${quotes.toSymbol}`,
+          `Сеть: ${quotes.chain}`,
+          `Лучший агрегатор: ${quotes.aggregator}`,
+          `Провайдеров опрошено: ${quotes.providersPolled}`,
+          '',
+          'Выбери агрегатор для свопа:',
+        ].join('\n'),
+        { reply_markup: { inline_keyboard: buttons } },
+      );
+    } catch (error: unknown) {
+      const errorMessage = this.getErrorMessage(error);
+
+      this.logger.error(`Swap command failed: ${errorMessage}`);
+      await context.reply(`Ошибка: ${errorMessage}`);
     }
   }
 
-  private getMessageText(message: Context['message']): string | null {
-    if (!message) {
+  private async handleSwapCallback(context: Context): Promise<void> {
+    const callbackQuery = context.callbackQuery;
+
+    if (!callbackQuery || !('data' in callbackQuery)) {
+      return;
+    }
+
+    const data = callbackQuery.data;
+    const payload = data.slice(SWAP_CALLBACK_PREFIX.length);
+    const lastColonIndex = payload.lastIndexOf(':');
+
+    if (lastColonIndex < 0) {
+      await context.answerCbQuery('Неверные данные');
+      return;
+    }
+
+    const swapId = payload.slice(0, lastColonIndex);
+    const aggregatorName = payload.slice(lastColonIndex + 1);
+
+    const pending = this.pendingSwaps.get(swapId);
+
+    if (!pending || Date.now() - pending.createdAt > PENDING_SWAP_TTL_MS) {
+      this.pendingSwaps.delete(swapId);
+      await context.answerCbQuery('Своп истёк. Отправь /swap заново.');
+      return;
+    }
+
+    this.pendingSwaps.delete(swapId);
+
+    try {
+      await context.answerCbQuery('Подготовка свопа...');
+
+      const session = await this.swapService.createSwapSession(pending.request, aggregatorName);
+
+      if (session.chain === 'solana') {
+        await this.replySolanaSession(context, session);
+      } else {
+        await this.replyEvmSession(context, session);
+      }
+    } catch (error: unknown) {
+      const errorMessage = this.getErrorMessage(error);
+
+      this.logger.error(`Swap callback failed: ${errorMessage}`);
+      await context.reply(`Ошибка: ${errorMessage}`);
+    }
+  }
+
+  private async replySolanaSession(context: Context, session: ISwapSessionResponse): Promise<void> {
+    await context.reply(
+      [
+        'Своп подготовлен.',
+        `Session ID: ${session.sessionId}`,
+        'Открой ссылку в Phantom или отсканируй QR для подключения и подписи транзакции.',
+        `Сессия истекает: ${session.expiresAt}`,
+      ].join('\n'),
+      {
+        reply_markup: {
+          inline_keyboard: [[{ text: 'Open in Phantom', url: session.walletConnectUri }]],
+        },
+      },
+    );
+
+    await this.sendQrCode(
+      context,
+      session.walletConnectUri,
+      'Отсканируй QR в Phantom для подключения.',
+    );
+  }
+
+  private async replyEvmSession(context: Context, session: ISwapSessionResponse): Promise<void> {
+    await this.sendQrCode(
+      context,
+      session.walletConnectUri,
+      [
+        'Отсканируй QR в MetaMask или Trust Wallet для подключения.',
+        `Session ID: ${session.sessionId}`,
+        `Сессия истекает: ${session.expiresAt}`,
+      ].join('\n'),
+    );
+  }
+
+  private async sendQrCode(context: Context, uri: string, caption: string): Promise<void> {
+    try {
+      const qrBuffer = await QRCode.toBuffer(uri, {
+        type: 'png',
+        width: QR_CODE_WIDTH,
+        margin: QR_CODE_MARGIN,
+      });
+
+      await context.replyWithPhoto(Input.fromBuffer(qrBuffer, 'qr.png'), { caption });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'unknown error';
+      this.logger.warn(`Failed to send QR code: ${errorMessage}`);
+    }
+  }
+
+  private cleanExpiredSwaps(): void {
+    const now = Date.now();
+
+    for (const [id, swap] of this.pendingSwaps) {
+      if (now - swap.createdAt > PENDING_SWAP_TTL_MS) {
+        this.pendingSwaps.delete(id);
+      }
+    }
+  }
+
+  private getMessageText(contextMessage: Context['message']): string | null {
+    if (!contextMessage) {
       return null;
     }
 
-    const candidate = message as Message;
+    const candidate = contextMessage as Message;
 
     if ('text' in candidate && typeof candidate.text === 'string') {
       return candidate.text.trim();
@@ -271,128 +413,15 @@ export class TelegramUpdateHandler {
     return normalizedChain;
   }
 
-  private async sendWalletConnectQr(context: Context, walletConnectUri: string): Promise<void> {
-    try {
-      const qrBuffer = await QRCode.toBuffer(walletConnectUri, {
-        type: 'png',
-        width: 512,
-        margin: 2,
-      });
-
-      await context.replyWithPhoto(Input.fromBuffer(qrBuffer, 'qr.png'), {
-        caption: 'Отсканируй QR в MetaMask или Trust Wallet для подключения.',
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'unknown error';
-      this.logger.warn(`Failed to send WC QR code: ${message}`);
-    }
-  }
-
-  private buildWalletConnectLinks(walletConnectUri: string): {
-    metamask: string;
-    metamaskLegacy: string;
-    trustWallet: string;
-  } {
-    const encodedUri = encodeURIComponent(walletConnectUri);
-
-    return {
-      metamask: `https://link.metamask.io/wc?uri=${encodedUri}`,
-      metamaskLegacy: `https://metamask.app.link/wc?uri=${encodedUri}`,
-      trustWallet: `https://link.trustwallet.com/wc?uri=${encodedUri}`,
-    };
-  }
-
-  private async replySwapPrepared(
-    context: Context,
-    session: Awaited<ReturnType<SwapService['createSwapSession']>>,
-  ): Promise<void> {
-    if (session.chain === 'solana') {
-      await this.replySolanaSwapPrepared(context, session);
-      return;
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof BusinessException) {
+      return error.message;
     }
 
-    await this.replyEvmSwapPrepared(context, session);
-  }
+    if (error instanceof Error) {
+      return error.message;
+    }
 
-  private async replySolanaSwapPrepared(
-    context: Context,
-    session: Awaited<ReturnType<SwapService['createSwapSession']>>,
-  ): Promise<void> {
-    const providerQuoteLines = session.providerQuotes.map(
-      (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${session.toSymbol}`,
-    );
-    await context.reply(
-      [
-        `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} -> ${session.toAmount} ${session.toSymbol}`,
-        `Сеть: ${session.chain}`,
-        `Выбранный агрегатор: ${session.aggregator}`,
-        `Провайдеров опрошено: ${session.providersPolled}`,
-        'Котировки провайдеров:',
-        ...providerQuoteLines,
-        `Session ID: ${session.sessionId}`,
-        'Открой ссылку ниже в Phantom для подключения и подписи транзакции.',
-        `Phantom link: ${session.walletConnectUri}`,
-        `Сессия истекает: ${session.expiresAt}`,
-      ].join('\n'),
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: 'Open in Phantom',
-                url: session.walletConnectUri,
-              },
-            ],
-          ],
-        },
-      },
-    );
-  }
-
-  private async replyEvmSwapPrepared(
-    context: Context,
-    session: Awaited<ReturnType<SwapService['createSwapSession']>>,
-  ): Promise<void> {
-    const providerQuoteLines = session.providerQuotes.map(
-      (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${session.toSymbol}`,
-    );
-    const walletConnectLinks = this.buildWalletConnectLinks(session.walletConnectUri);
-
-    await context.replyWithHTML(
-      [
-        `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} → ${session.toAmount} ${session.toSymbol}`,
-        `Сеть: ${session.chain}`,
-        `Агрегатор: ${session.aggregator}`,
-        `Провайдеров: ${session.providersPolled}`,
-        ...providerQuoteLines,
-        '',
-        'Нажми кнопку или отсканируй QR в кошельке.',
-        `Сессия истекает: ${session.expiresAt}`,
-      ].join('\n'),
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: 'MetaMask',
-                url: walletConnectLinks.metamask,
-              },
-              {
-                text: 'Trust Wallet',
-                url: walletConnectLinks.trustWallet,
-              },
-            ],
-            [
-              {
-                text: 'MetaMask (alt link)',
-                url: walletConnectLinks.metamaskLegacy,
-              },
-            ],
-          ],
-        },
-      },
-    );
-
-    await this.sendWalletConnectQr(context, session.walletConnectUri);
+    return 'Внутренняя ошибка';
   }
 }

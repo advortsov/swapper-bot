@@ -134,11 +134,9 @@ describe('SwapService', () => {
         buyTokenDecimals: 6,
       },
     ]);
-    expect(result.aggregator).toBe('paraswap');
-    expect(result.providersPolled).toBe(2);
-    expect(result.providerQuotes).toHaveLength(2);
     expect(result.sessionId).toBe('session-id');
     expect(result.walletConnectUri).toBe('wc:test');
+    expect(result.chain).toBe('ethereum');
   });
 
   it('должен создавать swap-сессию в сети solana через WalletConnect', async () => {
@@ -209,6 +207,57 @@ describe('SwapService', () => {
     expect(createdSessions).toEqual([{ chain: 'solana' }]);
     expect(result.walletConnectUri).toBe('wc:test-solana');
     expect(result.chain).toBe('solana');
-    expect(result.aggregator).toBe('jupiter');
+  });
+
+  it('должен возвращать котировки без создания WC-сессии', async () => {
+    const priceQuoteService: Pick<
+      PriceQuoteService,
+      'prepare' | 'fetchQuoteSelection' | 'buildResponse'
+    > = {
+      prepare: async (): Promise<IPreparedPriceInput> => preparedPriceInput,
+      fetchQuoteSelection: async (): Promise<IQuoteSelection> => quoteSelection,
+      buildResponse: () => ({
+        chain: 'ethereum',
+        aggregator: 'paraswap',
+        fromSymbol: 'ETH',
+        toSymbol: 'USDC',
+        fromAmount: '10',
+        toAmount: '20200',
+        estimatedGasUsd: 0.23,
+        providersPolled: 2,
+        providerQuotes: [
+          { aggregator: 'paraswap', toAmount: '20200', estimatedGasUsd: 0.23 },
+          { aggregator: '0x', toAmount: '20150', estimatedGasUsd: null },
+        ],
+      }),
+    };
+    const walletConnectService = {
+      createSession: async () => {
+        throw new Error('should not be called');
+      },
+    };
+    const configService = { get: () => '0.5' } as unknown as ConfigService;
+    const service = new SwapService(
+      configService,
+      priceQuoteService as PriceQuoteService,
+      walletConnectService as unknown as WalletConnectService,
+      userSettingsService,
+    );
+
+    const result = await service.getSwapQuotes({
+      userId: '123',
+      amount: '10',
+      fromSymbol: 'ETH',
+      toSymbol: 'USDC',
+      chain: 'ethereum',
+      rawCommand: '/swap 10 ETH to USDC',
+    });
+
+    expect(result.chain).toBe('ethereum');
+    expect(result.aggregator).toBe('paraswap');
+    expect(result.fromAmount).toBe('10');
+    expect(result.toAmount).toBe('20200');
+    expect(result.providersPolled).toBe(2);
+    expect(result.providerQuotes).toHaveLength(2);
   });
 });
