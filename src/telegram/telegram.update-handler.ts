@@ -315,18 +315,17 @@ export class TelegramUpdateHandler {
     );
     const walletConnectLinks = this.buildWalletConnectLinks(session.walletConnectUri);
 
-    await context.reply(
+    await context.replyWithHTML(
       [
-        `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} -> ${session.toAmount} ${session.toSymbol}`,
+        `Подготовлен своп ${session.fromAmount} ${session.fromSymbol} → ${session.toAmount} ${session.toSymbol}`,
         `Сеть: ${session.chain}`,
-        `Выбранный агрегатор: ${session.aggregator}`,
-        `Провайдеров опрошено: ${session.providersPolled}`,
-        'Котировки провайдеров:',
+        `Агрегатор: ${session.aggregator}`,
+        `Провайдеров: ${session.providersPolled}`,
         ...providerQuoteLines,
-        `Session ID: ${session.sessionId}`,
-        'Кнопки ниже работают только на телефоне (мобильный кошелёк).',
-        'Для десктопа — скопируй WC URI в MetaMask Mobile через QR.',
-        `WalletConnect URI: ${session.walletConnectUri}`,
+        '',
+        'Нажми кнопку ниже для подключения кошелька.',
+        'Если кнопка не открыла кошелёк — скопируй URI и вставь в MetaMask → QR-сканер:',
+        `<code>${session.walletConnectUri}</code>`,
         `Сессия истекает: ${session.expiresAt}`,
       ].join('\n'),
       {
@@ -334,17 +333,17 @@ export class TelegramUpdateHandler {
           inline_keyboard: [
             [
               {
-                text: 'Open in MetaMask',
+                text: 'MetaMask',
                 url: walletConnectLinks.metamask,
               },
               {
-                text: 'Open in Trust Wallet',
+                text: 'Trust Wallet',
                 url: walletConnectLinks.trustWallet,
               },
             ],
             [
               {
-                text: 'MetaMask (legacy link)',
+                text: 'MetaMask (alt link)',
                 url: walletConnectLinks.metamaskLegacy,
               },
             ],
