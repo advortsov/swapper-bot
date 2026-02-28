@@ -98,17 +98,26 @@ describe('WalletConnectPhantomService', () => {
     });
 
     const sessionUrl = new URL(session.uri);
-    const sessionId = sessionUrl.searchParams.get('sessionId');
 
-    expect(sessionUrl.origin).toBe('https://1303118-cr22992.tw1.ru');
-    expect(sessionUrl.pathname).toBe('/phantom/connect');
+    expect(sessionUrl.origin).toBe('https://phantom.app');
+    expect(sessionUrl.pathname).toBe('/ul/v1/connect');
+    expect(sessionUrl.searchParams.get('dapp_encryption_public_key')).toBeTruthy();
+    expect(sessionUrl.searchParams.get('cluster')).toBe('mainnet-beta');
+
+    const redirectLink = new URL(sessionUrl.searchParams.get('redirect_link') ?? '');
+    const sessionId = redirectLink.searchParams.get('sessionId');
+
+    expect(redirectLink.origin).toBe('https://1303118-cr22992.tw1.ru');
+    expect(redirectLink.pathname).toBe('/phantom/callback/connect');
     expect(sessionId).toBeTruthy();
 
     const connectUrl = service.getPhantomConnectUrl(sessionId ?? '');
+
+    expect(connectUrl).toBe(session.uri);
+
     const storedSession = sessionStore.get(sessionId ?? '');
     const phantomState = storedSession?.phantom;
 
-    expect(connectUrl).toContain('https://phantom.com/ul/v1/connect');
     expect(phantomState?.dappEncryptionPublicKey).toBeTruthy();
     expect(phantomState?.dappEncryptionSecretKey).toBeTruthy();
 
@@ -138,7 +147,7 @@ describe('WalletConnectPhantomService', () => {
         fromAddress: 'wallet-public-key',
       }),
     );
-    expect(signUrl).toContain('https://phantom.com/ul/v1/signTransaction');
+    expect(signUrl).toContain('https://phantom.app/ul/v1/signTransaction');
 
     const signPayload = encryptPayload(
       {

@@ -26,7 +26,6 @@ import {
   PHANTOM_CLUSTER,
   PHANTOM_CONNECT_CALLBACK_PATH,
   PHANTOM_CONNECT_METHOD,
-  PHANTOM_CONNECT_PATH,
   PHANTOM_NONCE_LENGTH,
   PHANTOM_SIGN_CALLBACK_PATH,
   PHANTOM_SIGN_TRANSACTION_METHOD,
@@ -68,15 +67,27 @@ export class WalletConnectPhantomService {
   ): Promise<IWalletConnectSessionPublic> {
     const sessionId = randomUUID();
     const expiresAt = Date.now() + this.swapTimeoutSeconds * 1_000;
+    const keyPair = nacl.box.keyPair();
+    const phantomState: IPhantomSessionState = {
+      dappEncryptionPublicKey: bs58.encode(keyPair.publicKey),
+      dappEncryptionSecretKey: bs58.encode(keyPair.secretKey),
+    };
+    const uri = this.buildPhantomUrl(PHANTOM_CONNECT_METHOD, {
+      dapp_encryption_public_key: phantomState.dappEncryptionPublicKey,
+      cluster: PHANTOM_CLUSTER,
+      app_url: this.appPublicUrl,
+      redirect_link: this.buildAppUrl(PHANTOM_CONNECT_CALLBACK_PATH, sessionId),
+    });
     const session: IWalletConnectSession = {
       sessionId,
       userId: input.userId,
-      uri: this.buildAppUrl(PHANTOM_CONNECT_PATH, sessionId),
+      uri,
       expiresAt,
       swapPayload: {
         ...input.swapPayload,
         slippagePercentage: this.swapSlippage,
       },
+      phantom: phantomState,
     };
 
     this.sessionStore.save(session);
@@ -90,15 +101,7 @@ export class WalletConnectPhantomService {
   }
 
   public getPhantomConnectUrl(sessionId: string): string {
-    const session = this.getSolanaSession(sessionId);
-    const phantomState = this.ensurePhantomState(session);
-
-    return this.buildPhantomUrl(PHANTOM_CONNECT_METHOD, {
-      dapp_encryption_public_key: phantomState.dappEncryptionPublicKey,
-      cluster: PHANTOM_CLUSTER,
-      app_url: this.appPublicUrl,
-      redirect_link: this.buildAppUrl(PHANTOM_CONNECT_CALLBACK_PATH, sessionId),
-    });
+    return this.getSolanaSession(sessionId).uri;
   }
 
   public async handleConnectCallback(query: IPhantomCallbackQuery): Promise<string> {
@@ -255,15 +258,9 @@ export class WalletConnectPhantomService {
   }
 
   private ensurePhantomState(session: IWalletConnectSession): IPhantomSessionState {
-    if (session.phantom) {
-      return session.phantom;
+    if (!session.phantom) {
+      throw new BusinessException('Phantom session state is not initialized');
     }
-
-    const keyPair = nacl.box.keyPair();
-    session.phantom = {
-      dappEncryptionPublicKey: bs58.encode(keyPair.publicKey),
-      dappEncryptionSecretKey: bs58.encode(keyPair.secretKey),
-    };
 
     return session.phantom;
   }
