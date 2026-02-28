@@ -58,7 +58,10 @@ export class PriceQuoteService {
     };
   }
 
-  public async fetchQuoteSelection(input: IPreparedPriceInput): Promise<IQuoteSelection> {
+  public async fetchQuoteSelection(
+    input: IPreparedPriceInput,
+    preferredAggregator?: string,
+  ): Promise<IQuoteSelection> {
     const chainAggregators = this.aggregators.filter((aggregator) =>
       aggregator.supportedChains.includes(input.chain),
     );
@@ -67,8 +70,10 @@ export class PriceQuoteService {
       throw new BusinessException(`No aggregators configured for chain ${input.chain}`);
     }
 
+    const aggregatorsToQuery = this.filterByPreference(chainAggregators, preferredAggregator);
+
     const settledQuotes = await Promise.allSettled(
-      chainAggregators.map(async (aggregator) =>
+      aggregatorsToQuery.map(async (aggregator) =>
         aggregator.getQuote({
           chain: input.chain,
           sellTokenAddress: input.fromToken.address,
@@ -103,8 +108,28 @@ export class PriceQuoteService {
     return {
       bestQuote,
       successfulQuotes: quotes,
-      providersPolled: chainAggregators.length,
+      providersPolled: aggregatorsToQuery.length,
     };
+  }
+
+  private filterByPreference(
+    chainAggregators: readonly IAggregator[],
+    preferredAggregator?: string,
+  ): readonly IAggregator[] {
+    if (!preferredAggregator || preferredAggregator === 'auto') {
+      return chainAggregators;
+    }
+
+    const normalizedPreference = preferredAggregator === 'zerox' ? '0x' : preferredAggregator;
+    const preferred = chainAggregators.filter(
+      (aggregator) => aggregator.name === normalizedPreference,
+    );
+
+    if (preferred.length > 0) {
+      return preferred;
+    }
+
+    return chainAggregators;
   }
 
   public buildResponse(input: IPreparedPriceInput, selection: IQuoteSelection): IPriceResponse {

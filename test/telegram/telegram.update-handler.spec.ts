@@ -3,7 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { UsersRepository } from '../../src/database/repositories/users.repository';
 import type { PriceService } from '../../src/price/price.service';
 import type { SwapService } from '../../src/swap/swap.service';
+import type { TelegramSettingsHandler } from '../../src/telegram/telegram.settings-handler';
 import { TelegramUpdateHandler } from '../../src/telegram/telegram.update-handler';
+
+const settingsHandler = {
+  register: vi.fn(),
+  hasPendingInput: vi.fn().mockReturnValue(false),
+  handleTextInput: vi.fn(),
+} as unknown as TelegramSettingsHandler;
 
 describe('TelegramUpdateHandler', () => {
   it('должен отправлять для solana swap ссылку на Phantom и кнопку открытия', async () => {
@@ -12,6 +19,7 @@ describe('TelegramUpdateHandler', () => {
       command: vi.fn((name: string, handler: (context: unknown) => Promise<void>) => {
         registeredCommands.set(name, handler);
       }),
+      on: vi.fn(),
     };
     const swapService: Pick<SwapService, 'createSwapSession'> = {
       createSwapSession: vi.fn().mockResolvedValue({
@@ -35,6 +43,7 @@ describe('TelegramUpdateHandler', () => {
       {} as PriceService,
       swapService as SwapService,
       usersRepository as UsersRepository,
+      settingsHandler,
     );
 
     handler.register(bot as never);

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import QRCode from 'qrcode';
 import { Context, Telegraf } from 'telegraf';
 import { Input } from 'telegraf';
+import { message } from 'telegraf/filters';
 import type { Message } from 'telegraf/typings/core/types/typegram';
 
 import {
@@ -15,6 +16,7 @@ import { PriceService } from '../price/price.service';
 import type { IPriceCommandDto } from './dto/price-command.dto';
 import { SwapService } from '../swap/swap.service';
 import type { ISwapCommandDto } from './dto/swap-command.dto';
+import { TelegramSettingsHandler } from './telegram.settings-handler';
 
 const PRICE_COMMAND_REGEX =
   /^\/price\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)(?:\s+on\s+([a-zA-Z0-9_-]+))?$/i;
@@ -35,12 +37,29 @@ export class TelegramUpdateHandler {
     private readonly priceService: PriceService,
     private readonly swapService: SwapService,
     private readonly usersRepository: UsersRepository,
+    private readonly settingsHandler: TelegramSettingsHandler,
   ) {}
 
   public register(bot: Telegraf): void {
     bot.command('start', async (context: Context) => this.handleStart(context));
     bot.command('price', async (context: Context) => this.handlePrice(context));
     bot.command('swap', async (context: Context) => this.handleSwap(context));
+    this.settingsHandler.register(bot);
+    bot.on(message('text'), async (context: Context) => this.handleText(context));
+  }
+
+  private async handleText(context: Context): Promise<void> {
+    const from = context.from;
+
+    if (!from) {
+      return;
+    }
+
+    const userId = from.id.toString();
+
+    if (this.settingsHandler.hasPendingInput(userId)) {
+      await this.settingsHandler.handleTextInput(context);
+    }
   }
 
   private async handleStart(context: Context): Promise<void> {
@@ -56,7 +75,12 @@ export class TelegramUpdateHandler {
     });
 
     await context.reply(
-      'Привет! Команды: /price <amount> <from> to <to> [on <chain>] и /swap <amount> <from> to <to> [on <chain>]',
+      [
+        'Привет! Команды:',
+        '/price <amount> <from> to <to> [on <chain>]',
+        '/swap <amount> <from> to <to> [on <chain>]',
+        '/settings — настройки свопа (slippage, агрегатор)',
+      ].join('\n'),
     );
   }
 

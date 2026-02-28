@@ -6,8 +6,16 @@ import type { ChainType } from '../../src/chains/interfaces/chain.interface';
 import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
 import type { IPreparedPriceInput, IQuoteSelection } from '../../src/price/price.quote.service';
 import type { PriceQuoteService } from '../../src/price/price.quote.service';
+import type { UserSettingsService } from '../../src/settings/user-settings.service';
 import { SwapService } from '../../src/swap/swap.service';
 import type { WalletConnectService } from '../../src/wallet-connect/wallet-connect.service';
+
+const userSettingsService = {
+  getSettings: async () => ({
+    slippage: 0.5,
+    preferredAggregator: 'auto',
+  }),
+} as unknown as UserSettingsService;
 
 const preparedPriceInput: IPreparedPriceInput = {
   normalizedAmount: '10',
@@ -105,6 +113,7 @@ describe('SwapService', () => {
       configService,
       priceQuoteService as PriceQuoteService,
       walletConnectService as WalletConnectService,
+      userSettingsService,
     );
 
     const result = await service.createSwapSession({
@@ -185,6 +194,7 @@ describe('SwapService', () => {
       configService,
       priceQuoteService as PriceQuoteService,
       walletConnectService as WalletConnectService,
+      userSettingsService,
     );
 
     const result = await service.createSwapSession({

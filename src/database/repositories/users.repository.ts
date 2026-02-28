@@ -28,4 +28,28 @@ export class UsersRepository {
       )
       .execute();
   }
+
+  public async getSettings(userId: string): Promise<Record<string, unknown> | null> {
+    const row = await this.databaseService
+      .getConnection()
+      .selectFrom('users')
+      .select('settings')
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!row?.settings) {
+      return null;
+    }
+
+    return row.settings as Record<string, unknown>;
+  }
+
+  public async updateSettings(userId: string, settings: Record<string, unknown>): Promise<void> {
+    await this.databaseService
+      .getConnection()
+      .updateTable('users')
+      .set({ settings })
+      .where('id', '=', userId)
+      .execute();
+  }
 }
