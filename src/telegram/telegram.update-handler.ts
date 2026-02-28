@@ -328,7 +328,7 @@ export class TelegramUpdateHandler {
         'Котировки провайдеров:',
         ...providerQuoteLines,
         `Session ID: ${session.sessionId}`,
-        'Для подключения нажми кнопку кошелька ниже.',
+        'Нажми кнопку кошелька ниже (только мобильные кошельки).',
         `WalletConnect URI: ${session.walletConnectUri}`,
         `Сессия истекает: ${session.expiresAt}`,
       ].join('\n'),

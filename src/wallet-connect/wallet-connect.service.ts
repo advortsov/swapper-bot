@@ -193,12 +193,16 @@ export class WalletConnectService implements OnModuleInit {
     description: string;
     url: string;
     icons: string[];
+    redirect: { universal: string };
   } {
     return {
       name: 'swapper-bot',
       description: 'DEX Aggregator Telegram Bot',
       url: this.appPublicUrl,
       icons: [WALLETCONNECT_ICON_URL],
+      redirect: {
+        universal: this.appPublicUrl,
+      },
     };
   }
 
