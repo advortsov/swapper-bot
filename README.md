@@ -80,6 +80,7 @@ npm run build
 - `ParaSwap`: задать `PARASWAP_PARTNER_ADDRESS`, `PARASWAP_FEE_BPS`, `PARASWAP_API_VERSION=6.2`.
 - `Jupiter`: задать `JUPITER_PLATFORM_FEE_BPS` и заранее созданные `JUPITER_FEE_ACCOUNT_<SYMBOL>`.
 - `Odos`: на текущем этапе оставить `ODOS_MONETIZATION_MODE=disabled` или `tracking_only`.
+- Приложение валидирует эти связки на старте и падает fail-fast, если fee включён без обязательных реквизитов.
 
 ## Production (VPS + shared PostgreSQL)
 

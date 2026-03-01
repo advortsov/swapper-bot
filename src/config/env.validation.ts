@@ -10,8 +10,10 @@ const ENV_KEY_APP_PUBLIC_URL = 'APP_PUBLIC_URL';
 const ENV_KEY_SWAP_SLIPPAGE = 'SWAP_SLIPPAGE';
 const ENV_KEY_SWAP_TIMEOUT_SECONDS = 'SWAP_TIMEOUT_SECONDS';
 const ENV_KEY_ZEROX_FEE_BPS = 'ZEROX_FEE_BPS';
+const ENV_KEY_ZEROX_FEE_RECIPIENT = 'ZEROX_FEE_RECIPIENT';
 const ENV_KEY_ZEROX_FEE_TOKEN_MODE = 'ZEROX_FEE_TOKEN_MODE';
 const ENV_KEY_PARASWAP_FEE_BPS = 'PARASWAP_FEE_BPS';
+const ENV_KEY_PARASWAP_PARTNER_ADDRESS = 'PARASWAP_PARTNER_ADDRESS';
 const ENV_KEY_PARASWAP_API_VERSION = 'PARASWAP_API_VERSION';
 const ENV_KEY_JUPITER_PLATFORM_FEE_BPS = 'JUPITER_PLATFORM_FEE_BPS';
 const ENV_KEY_ODOS_MONETIZATION_MODE = 'ODOS_MONETIZATION_MODE';
@@ -26,8 +28,16 @@ const MAX_PARASWAP_FEE_BPS = 200;
 const DEFAULT_CACHE_TTL_PRICE = 30;
 const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 const DEFAULT_SWAP_SLIPPAGE = 0.5;
+const PARASWAP_SUPPORTED_API_VERSION = '6.2';
 const ALLOWED_ZEROX_FEE_TOKEN_MODES = ['auto', 'buy', 'sell'] as const;
 const ALLOWED_ODOS_MONETIZATION_MODES = ['disabled', 'tracking_only', 'enforced'] as const;
+const JUPITER_FEE_ACCOUNT_KEYS = [
+  'JUPITER_FEE_ACCOUNT_SOL',
+  'JUPITER_FEE_ACCOUNT_USDC',
+  'JUPITER_FEE_ACCOUNT_USDT',
+  'JUPITER_FEE_ACCOUNT_JUP',
+  'JUPITER_FEE_ACCOUNT_BONK',
+] as const;
 
 const ALLOWED_NODE_ENVS = ['development', 'production', 'test'] as const;
 
@@ -226,8 +236,73 @@ function validateOptionalEnum(
   throw new Error(`Environment variable "${key}" must be one of: ${allowedValues.join(', ')}`);
 }
 
+function parseOptionalInteger(value: string | undefined): number {
+  if (value === undefined) {
+    return 0;
+  }
+
+  const parsedValue = Number.parseInt(value, 10);
+
+  return Number.isInteger(parsedValue) ? parsedValue : 0;
+}
+
+function validateZeroXFeeConfig(source: EnvironmentSource, zeroXFeeBps: string | undefined): void {
+  if (parseOptionalInteger(zeroXFeeBps) > 0) {
+    getRequiredString(source, ENV_KEY_ZEROX_FEE_RECIPIENT);
+  }
+}
+
+function validateParaSwapFeeConfig(
+  source: EnvironmentSource,
+  paraswapFeeBps: string | undefined,
+  paraswapApiVersion: string | undefined,
+): void {
+  if (parseOptionalInteger(paraswapFeeBps) > 0) {
+    getRequiredString(source, ENV_KEY_PARASWAP_PARTNER_ADDRESS);
+  }
+
+  if (paraswapApiVersion !== undefined && paraswapApiVersion !== PARASWAP_SUPPORTED_API_VERSION) {
+    throw new Error(
+      `Environment variable "${ENV_KEY_PARASWAP_API_VERSION}" must be "${PARASWAP_SUPPORTED_API_VERSION}"`,
+    );
+  }
+}
+
+function validateJupiterFeeConfig(
+  source: EnvironmentSource,
+  jupiterFeeBps: string | undefined,
+): void {
+  if (parseOptionalInteger(jupiterFeeBps) === 0) {
+    return;
+  }
+
+  const hasAnyJupiterFeeAccount = JUPITER_FEE_ACCOUNT_KEYS.some(
+    (key) => getOptionalString(source, key) !== undefined,
+  );
+
+  if (!hasAnyJupiterFeeAccount) {
+    throw new Error(
+      'At least one JUPITER_FEE_ACCOUNT_<SYMBOL> must be configured when JUPITER_PLATFORM_FEE_BPS is greater than 0',
+    );
+  }
+}
+
+function validateOdosFeeConfig(odosMode: string | undefined): void {
+  if (odosMode === 'enforced') {
+    throw new Error(
+      'Environment variable "ODOS_MONETIZATION_MODE" cannot be "enforced" in the current launch stage',
+    );
+  }
+}
+
 function validateFeeEnvironment(source: EnvironmentSource): EnvironmentResult {
-  return {
+  const zeroXFeeBps = getOptionalString(source, ENV_KEY_ZEROX_FEE_BPS);
+  const paraswapFeeBps = getOptionalString(source, ENV_KEY_PARASWAP_FEE_BPS);
+  const paraswapApiVersion = getOptionalString(source, ENV_KEY_PARASWAP_API_VERSION);
+  const jupiterFeeBps = getOptionalString(source, ENV_KEY_JUPITER_PLATFORM_FEE_BPS);
+  const odosMode = getOptionalString(source, ENV_KEY_ODOS_MONETIZATION_MODE);
+
+  const feeEnvironment = {
     [ENV_KEY_ZEROX_FEE_BPS]:
       validateOptionalBps(source, ENV_KEY_ZEROX_FEE_BPS, MAX_FEE_BPS) ??
       source[ENV_KEY_ZEROX_FEE_BPS],
@@ -237,9 +312,7 @@ function validateFeeEnvironment(source: EnvironmentSource): EnvironmentResult {
     [ENV_KEY_PARASWAP_FEE_BPS]:
       validateOptionalBps(source, ENV_KEY_PARASWAP_FEE_BPS, MAX_PARASWAP_FEE_BPS) ??
       source[ENV_KEY_PARASWAP_FEE_BPS],
-    [ENV_KEY_PARASWAP_API_VERSION]:
-      getOptionalString(source, ENV_KEY_PARASWAP_API_VERSION) ??
-      source[ENV_KEY_PARASWAP_API_VERSION],
+    [ENV_KEY_PARASWAP_API_VERSION]: paraswapApiVersion ?? source[ENV_KEY_PARASWAP_API_VERSION],
     [ENV_KEY_JUPITER_PLATFORM_FEE_BPS]:
       validateOptionalBps(source, ENV_KEY_JUPITER_PLATFORM_FEE_BPS, MAX_FEE_BPS) ??
       source[ENV_KEY_JUPITER_PLATFORM_FEE_BPS],
@@ -250,6 +323,13 @@ function validateFeeEnvironment(source: EnvironmentSource): EnvironmentResult {
         ALLOWED_ODOS_MONETIZATION_MODES,
       ) ?? source[ENV_KEY_ODOS_MONETIZATION_MODE],
   };
+
+  validateZeroXFeeConfig(source, zeroXFeeBps);
+  validateParaSwapFeeConfig(source, paraswapFeeBps, paraswapApiVersion);
+  validateJupiterFeeConfig(source, jupiterFeeBps);
+  validateOdosFeeConfig(odosMode);
+
+  return feeEnvironment;
 }
 
 export function validateEnvironment(source: EnvironmentSource): EnvironmentResult {

@@ -74,4 +74,59 @@ describe('validateEnvironment', () => {
       'Environment variable "ZEROX_FEE_BPS" must be an integer between 0 and 10000',
     );
   });
+
+  it('должен требовать ZEROX_FEE_RECIPIENT при включенной комиссии 0x', () => {
+    const environmentWithMissingZeroXRecipient = {
+      ...validEnvironment,
+      ZEROX_FEE_BPS: '25',
+    };
+
+    expect(() => validateEnvironment(environmentWithMissingZeroXRecipient)).toThrowError(
+      'Environment variable "ZEROX_FEE_RECIPIENT" is required',
+    );
+  });
+
+  it('должен требовать PARASWAP_PARTNER_ADDRESS при включенной комиссии ParaSwap', () => {
+    const environmentWithMissingParaSwapPartner = {
+      ...validEnvironment,
+      PARASWAP_FEE_BPS: '15',
+    };
+
+    expect(() => validateEnvironment(environmentWithMissingParaSwapPartner)).toThrowError(
+      'Environment variable "PARASWAP_PARTNER_ADDRESS" is required',
+    );
+  });
+
+  it('должен требовать хотя бы один JUPITER_FEE_ACCOUNT при включенной комиссии Jupiter', () => {
+    const environmentWithMissingJupiterFeeAccounts = {
+      ...validEnvironment,
+      JUPITER_PLATFORM_FEE_BPS: '20',
+    };
+
+    expect(() => validateEnvironment(environmentWithMissingJupiterFeeAccounts)).toThrowError(
+      'At least one JUPITER_FEE_ACCOUNT_<SYMBOL> must be configured when JUPITER_PLATFORM_FEE_BPS is greater than 0',
+    );
+  });
+
+  it('должен запрещать ODOS_MONETIZATION_MODE=enforced на текущем этапе', () => {
+    const environmentWithUnsupportedOdosMode = {
+      ...validEnvironment,
+      ODOS_MONETIZATION_MODE: 'enforced',
+    };
+
+    expect(() => validateEnvironment(environmentWithUnsupportedOdosMode)).toThrowError(
+      'Environment variable "ODOS_MONETIZATION_MODE" cannot be "enforced" in the current launch stage',
+    );
+  });
+
+  it('должен принимать ParaSwap только с версией API 6.2', () => {
+    const environmentWithUnsupportedParaswapVersion = {
+      ...validEnvironment,
+      PARASWAP_API_VERSION: '6.1',
+    };
+
+    expect(() => validateEnvironment(environmentWithUnsupportedParaswapVersion)).toThrowError(
+      'Environment variable "PARASWAP_API_VERSION" must be "6.2"',
+    );
+  });
 });
