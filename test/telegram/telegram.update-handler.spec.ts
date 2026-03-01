@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { UsersRepository } from '../../src/database/repositories/users.repository';
 import type { PriceService } from '../../src/price/price.service';
@@ -13,6 +13,11 @@ const settingsHandler = {
 } as unknown as TelegramSettingsHandler;
 
 describe('TelegramUpdateHandler', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env['APP_TIMEZONE'];
+  });
+
   it('должен показывать котировки с кнопками выбора агрегатора при /swap', async () => {
     const registeredCommands = new Map<string, (context: unknown) => Promise<void>>();
     const bot = {
@@ -80,6 +85,10 @@ describe('TelegramUpdateHandler', () => {
   });
 
   it('должен создавать WC-сессию и отправлять QR + кнопку Phantom для Solana', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-27T23:55:00.000Z'));
+    process.env['APP_TIMEZONE'] = 'Europe/Volgograd';
+
     const registeredCommands = new Map<string, (context: unknown) => Promise<void>>();
     const registeredActions = new Map<string, (context: unknown) => Promise<void>>();
     const bot = {
@@ -172,18 +181,24 @@ describe('TelegramUpdateHandler', () => {
     );
 
     // Solana: reply with Phantom button + QR
-    expect(callbackReply).toHaveBeenCalledWith(expect.stringContaining('Phantom'), {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: 'Open in Phantom',
-              url: 'https://example.org/phantom/connect?sessionId=session-id',
-            },
-          ],
-        ],
-      },
-    });
+    const callbackReplyArgs = callbackReply.mock.calls[0] as [
+      string,
+      { reply_markup: { inline_keyboard: { text: string; url: string }[][] } },
+    ];
+    const callbackText = callbackReplyArgs[0];
+    const callbackKeyboard = callbackReplyArgs[1].reply_markup.inline_keyboard;
+
+    expect(callbackText).toContain('Phantom');
+    expect(callbackText).toContain('Сессия истекает: 28.02.2026 03:00');
+    expect(callbackText).toContain('Срок актуальности свопа: 5 мин');
+    expect(callbackKeyboard).toEqual([
+      [
+        {
+          text: 'Open in Phantom',
+          url: 'https://example.org/phantom/connect?sessionId=session-id',
+        },
+      ],
+    ]);
     expect(replyWithPhoto).toHaveBeenCalledTimes(1);
   });
 });

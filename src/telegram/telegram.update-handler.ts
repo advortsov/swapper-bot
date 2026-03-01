@@ -17,6 +17,7 @@ import type { IPriceCommandDto } from './dto/price-command.dto';
 import { SwapService } from '../swap/swap.service';
 import type { ISwapCommandDto } from './dto/swap-command.dto';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
+import { createDateTimeFormatter, formatLocalDateTime, formatSwapValidity } from './telegram.time';
 import type { ISwapRequest, ISwapSessionResponse } from '../swap/interfaces/swap.interface';
 
 const PRICE_COMMAND_REGEX =
@@ -34,7 +35,6 @@ const SWAP_CALLBACK_PREFIX = 'sw:';
 const PENDING_SWAP_TTL_MS = 300_000;
 const QR_CODE_WIDTH = 512;
 const QR_CODE_MARGIN = 2;
-
 interface IPendingSwap {
   request: ISwapRequest;
   createdAt: number;
@@ -45,13 +45,16 @@ export class TelegramUpdateHandler {
   private readonly logger = new Logger(TelegramUpdateHandler.name);
   private readonly pendingSwaps = new Map<string, IPendingSwap>();
   private swapCounter = 0;
+  private readonly dateTimeFormatter: Intl.DateTimeFormat;
 
   public constructor(
     private readonly priceService: PriceService,
     private readonly swapService: SwapService,
     private readonly usersRepository: UsersRepository,
     private readonly settingsHandler: TelegramSettingsHandler,
-  ) {}
+  ) {
+    this.dateTimeFormatter = createDateTimeFormatter(process.env['APP_TIMEZONE']);
+  }
 
   public register(bot: Telegraf): void {
     bot.command('start', async (context: Context) => this.handleStart(context));
@@ -275,12 +278,16 @@ export class TelegramUpdateHandler {
   }
 
   private async replySolanaSession(context: Context, session: ISwapSessionResponse): Promise<void> {
+    const expiresAtLocal = formatLocalDateTime(session.expiresAt, this.dateTimeFormatter);
+    const validity = formatSwapValidity(session.expiresAt);
+
     await context.reply(
       [
         'Своп подготовлен.',
         `Session ID: ${session.sessionId}`,
         'Открой ссылку в Phantom или отсканируй QR для подключения и подписи транзакции.',
-        `Сессия истекает: ${session.expiresAt}`,
+        `Сессия истекает: ${expiresAtLocal}`,
+        `Срок актуальности свопа: ${validity}`,
       ].join('\n'),
       {
         reply_markup: {
@@ -297,13 +304,17 @@ export class TelegramUpdateHandler {
   }
 
   private async replyEvmSession(context: Context, session: ISwapSessionResponse): Promise<void> {
+    const expiresAtLocal = formatLocalDateTime(session.expiresAt, this.dateTimeFormatter);
+    const validity = formatSwapValidity(session.expiresAt);
+
     await this.sendQrCode(
       context,
       session.walletConnectUri,
       [
         'Отсканируй QR в MetaMask или Trust Wallet для подключения.',
         `Session ID: ${session.sessionId}`,
-        `Сессия истекает: ${session.expiresAt}`,
+        `Сессия истекает: ${expiresAtLocal}`,
+        `Срок актуальности свопа: ${validity}`,
       ].join('\n'),
     );
   }
