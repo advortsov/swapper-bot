@@ -102,7 +102,9 @@ describe('TelegramUpdateHandler', () => {
 
     expect(messageText).toContain('Комиссия бота: 0.3 USDC');
     expect(messageText).toContain('Срок актуальности свопа: 5 мин');
-    expect(firstButton?.text).toContain('fee 0.3 USDC');
+    expect(messageText).toContain('Доступные котировки:');
+    expect(messageText).toContain('- jupiter: gross 150 USDC');
+    expect(firstButton?.text).toContain('native fee: 0.3 USDC');
     expect(firstButton?.callback_data).toBe('sw:opaque-token');
   });
 

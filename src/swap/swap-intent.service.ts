@@ -159,6 +159,13 @@ export class SwapIntentService {
     await this.swapExecutionAuditService.markError(executionId, aggregator, feeMode, errorMessage);
   }
 
+  public async attachProviderReference(
+    executionId: string,
+    providerReference: string,
+  ): Promise<void> {
+    await this.swapExecutionAuditService.attachProviderReference(executionId, providerReference);
+  }
+
   private toConsumedIntent(result: IConsumeSwapIntentSelectionResult): IConsumedSwapIntent {
     if (result.status === 'expired') {
       this.metricsService.incrementSwapIntentExpired();

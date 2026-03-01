@@ -265,6 +265,10 @@ export class TelegramUpdateHandler {
   private buildSwapQuotesMessage(
     quotes: Awaited<ReturnType<SwapService['getSwapQuotes']>>,
   ): string {
+    const providerQuoteLines = quotes.providerQuotes.flatMap((quote) =>
+      this.buildQuoteLines(quote, quotes.toSymbol),
+    );
+
     return [
       `Котировки для ${quotes.fromAmount} ${quotes.fromSymbol} -> ${quotes.toAmount} ${quotes.toSymbol}`,
       `Сеть: ${quotes.chain}`,
@@ -275,6 +279,9 @@ export class TelegramUpdateHandler {
       `Срок актуальности свопа: ${formatSwapValidity(quotes.quoteExpiresAt)}`,
       `Котировка актуальна до: ${this.formatDate(quotes.quoteExpiresAt)}`,
       `Провайдеров опрошено: ${quotes.providersPolled}`,
+      '',
+      'Доступные котировки:',
+      ...providerQuoteLines,
       '',
       'Выбери агрегатор для свопа:',
     ].join('\n');
@@ -301,18 +308,21 @@ export class TelegramUpdateHandler {
     toSymbol: string,
     bestAggregator: string,
   ): InlineKeyboardButton[][] {
-    return providerQuotes.map((quote) => {
+    return providerQuotes.flatMap((quote) => {
+      if (!quote.selectionToken) {
+        return [];
+      }
+
       const prefix = quote.aggregator === bestAggregator ? '\u2B50 ' : '';
-      const feeText =
-        quote.feeAmount === '0'
-          ? 'no fee'
-          : `fee ${quote.feeAmount} ${quote.feeAmountSymbol ?? toSymbol}`;
+      const feeText = this.buildButtonFeeText(quote, toSymbol);
 
       return [
-        {
-          text: `${prefix}${quote.aggregator}: ${quote.toAmount} ${toSymbol} | ${feeText}`,
-          callback_data: `${SWAP_CALLBACK_PREFIX}${quote.selectionToken ?? ''}`,
-        },
+        [
+          {
+            text: `${prefix}${quote.aggregator}: ${quote.toAmount} ${toSymbol} | ${feeText}`,
+            callback_data: `${SWAP_CALLBACK_PREFIX}${quote.selectionToken}`,
+          },
+        ],
       ];
     });
   }
@@ -323,6 +333,14 @@ export class TelegramUpdateHandler {
       `  комиссия бота: ${quote.feeAmount} ${quote.feeAmountSymbol ?? toSymbol} (${quote.feeBps} bps, ${quote.feeDisplayLabel})`,
       `  net: ${quote.toAmount} ${toSymbol}`,
     ];
+  }
+
+  private buildButtonFeeText(quote: IProviderQuote, toSymbol: string): string {
+    if (quote.feeAmount === '0') {
+      return 'без комиссии';
+    }
+
+    return `${quote.feeDisplayLabel}: ${quote.feeAmount} ${quote.feeAmountSymbol ?? toSymbol}`;
   }
 
   private getConnectionHint(chain: ChainType): string {

@@ -200,14 +200,20 @@ describe('SwapService', () => {
         ],
       },
     };
+    const attachProviderReference = vi.fn().mockResolvedValue(undefined);
     const swapIntentService: Pick<
       SwapIntentService,
-      'consumeSelectionToken' | 'hashPayload' | 'createExecution' | 'markExecutionError'
+      | 'consumeSelectionToken'
+      | 'hashPayload'
+      | 'createExecution'
+      | 'markExecutionError'
+      | 'attachProviderReference'
     > = {
       consumeSelectionToken: async () => consumedIntent,
       hashPayload: () => 'swap-hash',
       createExecution: async () => 'execution-id',
       markExecutionError: async () => undefined,
+      attachProviderReference,
     };
     const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
       createSession: async (input) => {
@@ -234,6 +240,7 @@ describe('SwapService', () => {
     expect(result.aggregator).toBe('paraswap');
     expect(result.walletConnectUri).toBe('wc:test');
     expect(result.quoteExpiresAt).toBe('2026-03-02T00:05:00.000Z');
+    expect(attachProviderReference).toHaveBeenCalledWith('execution-id', 'session-id');
   });
 
   it('должен помечать execution как error, если WC-сессия не создалась', async () => {
@@ -276,12 +283,17 @@ describe('SwapService', () => {
     const markExecutionError = vi.fn().mockResolvedValue(undefined);
     const swapIntentService: Pick<
       SwapIntentService,
-      'consumeSelectionToken' | 'hashPayload' | 'createExecution' | 'markExecutionError'
+      | 'consumeSelectionToken'
+      | 'hashPayload'
+      | 'createExecution'
+      | 'markExecutionError'
+      | 'attachProviderReference'
     > = {
       consumeSelectionToken: async () => consumedIntent,
       hashPayload: () => 'swap-hash',
       createExecution: async () => 'execution-id',
       markExecutionError,
+      attachProviderReference: async () => undefined,
     };
     const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
       createSession: async () => {

@@ -77,4 +77,18 @@ export class SwapExecutionsRepository {
       .where('id', '=', executionId)
       .execute();
   }
+
+  public async updateProviderReference(
+    executionId: string,
+    providerReference: string,
+  ): Promise<void> {
+    await this.databaseService
+      .getConnection()
+      .updateTable('swap_executions')
+      .set({
+        provider_reference: providerReference,
+      })
+      .where('id', '=', executionId)
+      .execute();
+  }
 }

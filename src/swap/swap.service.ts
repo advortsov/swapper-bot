@@ -90,6 +90,10 @@ export class SwapService {
       consumedIntent,
       selectedQuote,
     });
+    await this.swapIntentService.attachProviderReference(
+      executionId,
+      walletConnectSession.sessionId,
+    );
 
     return {
       intentId: consumedIntent.intentId,

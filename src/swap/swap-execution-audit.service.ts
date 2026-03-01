@@ -41,4 +41,11 @@ export class SwapExecutionAuditService {
     this.metricsService.incrementSwapRequest('error');
     this.metricsService.incrementSwapFeeExecution(aggregator, feeMode, 'error');
   }
+
+  public async attachProviderReference(
+    executionId: string,
+    providerReference: string,
+  ): Promise<void> {
+    await this.swapExecutionsRepository.updateProviderReference(executionId, providerReference);
+  }
 }
