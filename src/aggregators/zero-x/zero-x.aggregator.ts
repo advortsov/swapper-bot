@@ -110,6 +110,18 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
       return {
         aggregatorName: this.name,
         toAmountBaseUnits: response.body.buyAmount,
+        grossToAmountBaseUnits: response.body.buyAmount,
+        feeAmountBaseUnits: '0',
+        feeAmountSymbol: null,
+        feeAmountDecimals: null,
+        feeBps: 0,
+        feeMode: 'disabled',
+        feeType: 'no fee',
+        feeDisplayLabel: 'no fee',
+        feeAppliedAtQuote: false,
+        feeEnforcedOnExecution: false,
+        feeAssetSide: 'none',
+        executionFee: params.feeConfig,
         estimatedGasUsd: null,
         totalNetworkFeeWei: response.body.totalNetworkFee,
         rawQuote: response.body,
@@ -168,6 +180,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
     url.searchParams.set('buyToken', params.buyTokenAddress);
     url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
     url.searchParams.set('taker', this.takerAddress);
+    this.applyFeeParams(url, params.feeConfig);
 
     return url;
   }
@@ -193,8 +206,19 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
     url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
     url.searchParams.set('taker', params.fromAddress);
     url.searchParams.set('slippageBps', this.toSlippageBps(params.slippagePercentage));
+    this.applyFeeParams(url, params.feeConfig);
 
     return url;
+  }
+
+  private applyFeeParams(url: URL, feeConfig: IQuoteRequest['feeConfig']): void {
+    if (feeConfig.kind !== 'zerox' || feeConfig.mode !== 'enforced') {
+      return;
+    }
+
+    url.searchParams.set('swapFeeRecipient', feeConfig.feeRecipient);
+    url.searchParams.set('swapFeeBps', `${feeConfig.feeBps}`);
+    url.searchParams.set('swapFeeToken', feeConfig.feeTokenAddress);
   }
 
   private toSlippageBps(slippagePercentage: number): string {

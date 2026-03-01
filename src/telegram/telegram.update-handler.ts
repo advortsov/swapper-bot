@@ -1,10 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import QRCode from 'qrcode';
-import { Context, Telegraf } from 'telegraf';
-import { Input } from 'telegraf';
+import { Input, type Context, type Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import type { InlineKeyboardButton, Message } from 'telegraf/typings/core/types/typegram';
 
+import type { IPriceCommandDto } from './dto/price-command.dto';
+import type { ISwapCommandDto } from './dto/swap-command.dto';
+import { TelegramSettingsHandler } from './telegram.settings-handler';
+import { createDateTimeFormatter, formatLocalDateTime, formatSwapValidity } from './telegram.time';
 import {
   DEFAULT_CHAIN,
   SUPPORTED_CHAINS,
@@ -12,13 +15,10 @@ import {
 } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { UsersRepository } from '../database/repositories/users.repository';
+import type { IProviderQuote } from '../price/interfaces/price.interface';
 import { PriceService } from '../price/price.service';
-import type { IPriceCommandDto } from './dto/price-command.dto';
+import type { ISwapSessionResponse } from '../swap/interfaces/swap.interface';
 import { SwapService } from '../swap/swap.service';
-import type { ISwapCommandDto } from './dto/swap-command.dto';
-import { TelegramSettingsHandler } from './telegram.settings-handler';
-import { createDateTimeFormatter, formatLocalDateTime, formatSwapValidity } from './telegram.time';
-import type { ISwapRequest, ISwapSessionResponse } from '../swap/interfaces/swap.interface';
 
 const PRICE_COMMAND_REGEX =
   /^\/price\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)(?:\s+on\s+([a-zA-Z0-9_-]+))?$/i;
@@ -30,21 +30,13 @@ const AMOUNT_MATCH_INDEX = 1;
 const FROM_SYMBOL_MATCH_INDEX = 2;
 const TO_SYMBOL_MATCH_INDEX = 3;
 const CHAIN_MATCH_INDEX = 4;
-
 const SWAP_CALLBACK_PREFIX = 'sw:';
-const PENDING_SWAP_TTL_MS = 300_000;
 const QR_CODE_WIDTH = 512;
 const QR_CODE_MARGIN = 2;
-interface IPendingSwap {
-  request: ISwapRequest;
-  createdAt: number;
-}
 
 @Injectable()
 export class TelegramUpdateHandler {
   private readonly logger = new Logger(TelegramUpdateHandler.name);
-  private readonly pendingSwaps = new Map<string, IPendingSwap>();
-  private swapCounter = 0;
   private readonly dateTimeFormatter: Intl.DateTimeFormat;
 
   public constructor(
@@ -105,12 +97,11 @@ export class TelegramUpdateHandler {
 
   private async handlePrice(context: Context): Promise<void> {
     const from = context.from;
+    const text = this.getMessageText(context.message);
 
     if (!from) {
       return;
     }
-
-    const text = this.getMessageText(context.message);
 
     if (!text) {
       await context.reply('Команда не распознана. Пример: /price 10 USDC to USDT');
@@ -134,41 +125,19 @@ export class TelegramUpdateHandler {
         rawCommand: text,
       });
 
-      const gasText =
-        result.estimatedGasUsd === null
-          ? 'N/A'
-          : `$${result.estimatedGasUsd.toFixed(GAS_USD_PRECISION)}`;
-      const providerQuoteLines = result.providerQuotes.map(
-        (quote) => `- ${quote.aggregator}: ${quote.toAmount} ${result.toSymbol}`,
-      );
-
-      await context.reply(
-        [
-          `Лучший курс для ${result.fromAmount} ${result.fromSymbol} -> ${result.toAmount} ${result.toSymbol}`,
-          `Сеть: ${result.chain}`,
-          `Агрегатор: ${result.aggregator}`,
-          `Оценка газа в USD: ${gasText}`,
-          `Провайдеров опрошено: ${result.providersPolled}`,
-          'Котировки провайдеров:',
-          ...providerQuoteLines,
-        ].join('\n'),
-      );
+      await context.reply(this.buildPriceMessage(result));
     } catch (error: unknown) {
-      const errorMessage = this.getErrorMessage(error);
-
-      this.logger.error(`Price command failed: ${errorMessage}`);
-      await context.reply(`Ошибка: ${errorMessage}`);
+      await this.replyWithError(context, 'Price command failed', error);
     }
   }
 
   private async handleSwap(context: Context): Promise<void> {
     const from = context.from;
+    const text = this.getMessageText(context.message);
 
     if (!from) {
       return;
     }
-
-    const text = this.getMessageText(context.message);
 
     if (!text) {
       await context.reply('Команда не распознана. Пример: /swap 10 USDC to USDT');
@@ -183,140 +152,187 @@ export class TelegramUpdateHandler {
         username: from.username ?? null,
       });
 
-      const request: ISwapRequest = {
+      const quotes = await this.swapService.getSwapQuotes({
         chain: command.chain,
         userId: from.id.toString(),
         amount: command.amount,
         fromSymbol: command.fromSymbol,
         toSymbol: command.toSymbol,
         rawCommand: text,
-      };
-
-      const quotes = await this.swapService.getSwapQuotes(request);
-
-      this.swapCounter += 1;
-      const swapId = `${from.id}_${this.swapCounter}`;
-      this.pendingSwaps.set(swapId, { request, createdAt: Date.now() });
-      this.cleanExpiredSwaps();
-
-      const buttons: InlineKeyboardButton[][] = quotes.providerQuotes.map((quote) => {
-        const isBest = quote.aggregator === quotes.aggregator;
-        const prefix = isBest ? '\u2B50 ' : '';
-
-        return [
-          {
-            text: `${prefix}${quote.aggregator}: ${quote.toAmount} ${quotes.toSymbol}`,
-            callback_data: `sw:${swapId}:${quote.aggregator}`,
-          },
-        ];
       });
 
-      await context.reply(
-        [
-          `Котировки для ${quotes.fromAmount} ${quotes.fromSymbol} \u2192 ${quotes.toAmount} ${quotes.toSymbol}`,
-          `Сеть: ${quotes.chain}`,
-          `Лучший агрегатор: ${quotes.aggregator}`,
-          `Провайдеров опрошено: ${quotes.providersPolled}`,
-          '',
-          'Выбери агрегатор для свопа:',
-        ].join('\n'),
-        { reply_markup: { inline_keyboard: buttons } },
-      );
+      await context.reply(this.buildSwapQuotesMessage(quotes), {
+        reply_markup: {
+          inline_keyboard: this.buildSwapButtons(
+            quotes.providerQuotes,
+            quotes.toSymbol,
+            quotes.aggregator,
+          ),
+        },
+      });
     } catch (error: unknown) {
-      const errorMessage = this.getErrorMessage(error);
-
-      this.logger.error(`Swap command failed: ${errorMessage}`);
-      await context.reply(`Ошибка: ${errorMessage}`);
+      await this.replyWithError(context, 'Swap command failed', error);
     }
   }
 
   private async handleSwapCallback(context: Context): Promise<void> {
     const callbackQuery = context.callbackQuery;
 
-    if (!callbackQuery || !('data' in callbackQuery)) {
+    if (!callbackQuery || !('data' in callbackQuery) || !context.from) {
       return;
     }
 
     const data = callbackQuery.data;
-    const payload = data.slice(SWAP_CALLBACK_PREFIX.length);
-    const lastColonIndex = payload.lastIndexOf(':');
+    const selectionToken = data.slice(SWAP_CALLBACK_PREFIX.length);
 
-    if (lastColonIndex < 0) {
+    if (selectionToken.trim() === '') {
       await context.answerCbQuery('Неверные данные');
       return;
     }
 
-    const swapId = payload.slice(0, lastColonIndex);
-    const aggregatorName = payload.slice(lastColonIndex + 1);
-
-    const pending = this.pendingSwaps.get(swapId);
-
-    if (!pending || Date.now() - pending.createdAt > PENDING_SWAP_TTL_MS) {
-      this.pendingSwaps.delete(swapId);
-      await context.answerCbQuery('Своп истёк. Отправь /swap заново.');
-      return;
-    }
-
-    this.pendingSwaps.delete(swapId);
-
     try {
       await context.answerCbQuery('Подготовка свопа...');
-
-      const session = await this.swapService.createSwapSession(pending.request, aggregatorName);
+      const session = await this.swapService.createSwapSessionFromSelection(
+        context.from.id.toString(),
+        selectionToken,
+      );
 
       if (session.chain === 'solana') {
         await this.replySolanaSession(context, session);
-      } else {
-        await this.replyEvmSession(context, session);
+        return;
       }
-    } catch (error: unknown) {
-      const errorMessage = this.getErrorMessage(error);
 
-      this.logger.error(`Swap callback failed: ${errorMessage}`);
-      await context.reply(`Ошибка: ${errorMessage}`);
+      await this.replyEvmSession(context, session);
+    } catch (error: unknown) {
+      await this.replyWithError(context, 'Swap callback failed', error);
     }
   }
 
   private async replySolanaSession(context: Context, session: ISwapSessionResponse): Promise<void> {
-    const expiresAtLocal = formatLocalDateTime(session.expiresAt, this.dateTimeFormatter);
-    const validity = formatSwapValidity(session.expiresAt);
-
-    await context.reply(
-      [
-        'Своп подготовлен.',
-        `Session ID: ${session.sessionId}`,
-        'Открой ссылку в Phantom или отсканируй QR для подключения и подписи транзакции.',
-        `Сессия истекает: ${expiresAtLocal}`,
-        `Срок актуальности свопа: ${validity}`,
-      ].join('\n'),
-      {
-        reply_markup: {
-          inline_keyboard: [[{ text: 'Open in Phantom', url: session.walletConnectUri }]],
-        },
+    await context.reply(this.buildPreparedSwapMessage(session), {
+      reply_markup: {
+        inline_keyboard: [[{ text: 'Open in Phantom', url: session.walletConnectUri }]],
       },
-    );
+    });
 
     await this.sendQrCode(
       context,
       session.walletConnectUri,
-      'Отсканируй QR в Phantom для подключения.',
+      [
+        'Отсканируй QR в Phantom для подключения.',
+        `Session ID: ${session.sessionId}`,
+        `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
+      ].join('\n'),
     );
   }
 
   private async replyEvmSession(context: Context, session: ISwapSessionResponse): Promise<void> {
-    const expiresAtLocal = formatLocalDateTime(session.expiresAt, this.dateTimeFormatter);
-    const validity = formatSwapValidity(session.expiresAt);
-
+    await context.reply(this.buildPreparedSwapMessage(session));
     await this.sendQrCode(
       context,
       session.walletConnectUri,
       [
         'Отсканируй QR в MetaMask или Trust Wallet для подключения.',
         `Session ID: ${session.sessionId}`,
-        `Сессия истекает: ${expiresAtLocal}`,
-        `Срок актуальности свопа: ${validity}`,
+        `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
       ].join('\n'),
     );
+  }
+
+  private buildPriceMessage(result: Awaited<ReturnType<PriceService['getBestQuote']>>): string {
+    const gasText =
+      result.estimatedGasUsd === null
+        ? 'N/A'
+        : `$${result.estimatedGasUsd.toFixed(GAS_USD_PRECISION)}`;
+    const providerQuoteLines = result.providerQuotes.flatMap((quote) =>
+      this.buildQuoteLines(quote, result.toSymbol),
+    );
+
+    return [
+      `Лучший курс для ${result.fromAmount} ${result.fromSymbol} -> ${result.toAmount} ${result.toSymbol}`,
+      `Сеть: ${result.chain}`,
+      `Агрегатор: ${result.aggregator}`,
+      `Gross: ${result.grossToAmount} ${result.toSymbol}`,
+      `Комиссия бота: ${result.feeAmount} ${result.feeAmountSymbol ?? result.toSymbol} (${result.feeBps} bps, ${result.feeDisplayLabel})`,
+      `Net: ${result.toAmount} ${result.toSymbol}`,
+      `Оценка газа в USD: ${gasText}`,
+      `Провайдеров опрошено: ${result.providersPolled}`,
+      'Котировки провайдеров:',
+      ...providerQuoteLines,
+    ].join('\n');
+  }
+
+  private buildSwapQuotesMessage(
+    quotes: Awaited<ReturnType<SwapService['getSwapQuotes']>>,
+  ): string {
+    return [
+      `Котировки для ${quotes.fromAmount} ${quotes.fromSymbol} -> ${quotes.toAmount} ${quotes.toSymbol}`,
+      `Сеть: ${quotes.chain}`,
+      `Лучший агрегатор: ${quotes.aggregator}`,
+      `Gross: ${quotes.grossToAmount} ${quotes.toSymbol}`,
+      `Комиссия бота: ${quotes.feeAmount} ${quotes.feeAmountSymbol ?? quotes.toSymbol} (${quotes.feeBps} bps, ${quotes.feeDisplayLabel})`,
+      `Net: ${quotes.toAmount} ${quotes.toSymbol}`,
+      `Срок актуальности свопа: ${formatSwapValidity(quotes.quoteExpiresAt)}`,
+      `Котировка актуальна до: ${this.formatDate(quotes.quoteExpiresAt)}`,
+      `Провайдеров опрошено: ${quotes.providersPolled}`,
+      '',
+      'Выбери агрегатор для свопа:',
+    ].join('\n');
+  }
+
+  private buildPreparedSwapMessage(session: ISwapSessionResponse): string {
+    return [
+      'Своп подготовлен.',
+      `Сеть: ${session.chain}`,
+      `Выбранный агрегатор: ${session.aggregator}`,
+      `Gross: ${session.grossToAmount} ${session.toSymbol}`,
+      `Комиссия бота: ${session.feeAmount} ${session.feeAmountSymbol ?? session.toSymbol} (${session.feeBps} bps, ${session.feeDisplayLabel})`,
+      `Net: ${session.toAmount} ${session.toSymbol}`,
+      `Session ID: ${session.sessionId}`,
+      `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
+      `Срок актуальности свопа: ${formatSwapValidity(session.quoteExpiresAt)}`,
+      `Котировка актуальна до: ${this.formatDate(session.quoteExpiresAt)}`,
+      this.getConnectionHint(session.chain),
+    ].join('\n');
+  }
+
+  private buildSwapButtons(
+    providerQuotes: readonly IProviderQuote[],
+    toSymbol: string,
+    bestAggregator: string,
+  ): InlineKeyboardButton[][] {
+    return providerQuotes.map((quote) => {
+      const prefix = quote.aggregator === bestAggregator ? '\u2B50 ' : '';
+      const feeText =
+        quote.feeAmount === '0'
+          ? 'no fee'
+          : `fee ${quote.feeAmount} ${quote.feeAmountSymbol ?? toSymbol}`;
+
+      return [
+        {
+          text: `${prefix}${quote.aggregator}: ${quote.toAmount} ${toSymbol} | ${feeText}`,
+          callback_data: `${SWAP_CALLBACK_PREFIX}${quote.selectionToken ?? ''}`,
+        },
+      ];
+    });
+  }
+
+  private buildQuoteLines(quote: IProviderQuote, toSymbol: string): readonly string[] {
+    return [
+      `- ${quote.aggregator}: gross ${quote.grossToAmount} ${toSymbol}`,
+      `  комиссия бота: ${quote.feeAmount} ${quote.feeAmountSymbol ?? toSymbol} (${quote.feeBps} bps, ${quote.feeDisplayLabel})`,
+      `  net: ${quote.toAmount} ${toSymbol}`,
+    ];
+  }
+
+  private getConnectionHint(chain: ChainType): string {
+    return chain === 'solana'
+      ? 'Открой ссылку в Phantom или отсканируй QR для подключения и подписи транзакции.'
+      : 'Открой WalletConnect URI через MetaMask или Trust Wallet.';
+  }
+
+  private formatDate(value: string): string {
+    return formatLocalDateTime(value, this.dateTimeFormatter);
   }
 
   private async sendQrCode(context: Context, uri: string, caption: string): Promise<void> {
@@ -331,16 +347,6 @@ export class TelegramUpdateHandler {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'unknown error';
       this.logger.warn(`Failed to send QR code: ${errorMessage}`);
-    }
-  }
-
-  private cleanExpiredSwaps(): void {
-    const now = Date.now();
-
-    for (const [id, swap] of this.pendingSwaps) {
-      if (now - swap.createdAt > PENDING_SWAP_TTL_MS) {
-        this.pendingSwaps.delete(id);
-      }
     }
   }
 
@@ -422,6 +428,12 @@ export class TelegramUpdateHandler {
     }
 
     return normalizedChain;
+  }
+
+  private async replyWithError(context: Context, logPrefix: string, error: unknown): Promise<void> {
+    const errorMessage = this.getErrorMessage(error);
+    this.logger.error(`${logPrefix}: ${errorMessage}`);
+    await context.reply(`Ошибка: ${errorMessage}`);
   }
 
   private getErrorMessage(error: unknown): string {

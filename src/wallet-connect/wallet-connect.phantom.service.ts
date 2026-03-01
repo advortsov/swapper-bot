@@ -6,10 +6,6 @@ import { randomUUID } from 'node:crypto';
 import nacl from 'tweetnacl';
 
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
-import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
-import { SolanaChain } from '../chains/solana/solana.chain';
-import { BusinessException } from '../common/exceptions/business.exception';
-import { MetricsService } from '../metrics/metrics.service';
 import type {
   ICreateWalletConnectSessionInput,
   IPhantomCallbackQuery,
@@ -19,7 +15,6 @@ import type {
 } from './interfaces/wallet-connect.interface';
 import {
   DEFAULT_APP_PUBLIC_URL,
-  DEFAULT_SWAP_SLIPPAGE,
   DEFAULT_SWAP_TIMEOUT_SECONDS,
   MIN_SWAP_TIMEOUT_SECONDS,
   PHANTOM_APP_BASE_URL,
@@ -38,13 +33,16 @@ import type {
 } from './wallet-connect.phantom.types';
 import { WalletConnectSessionStore } from './wallet-connect.session-store';
 import { escapeHtml, getWalletConnectErrorMessage } from './wallet-connect.utils';
+import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
+import { SolanaChain } from '../chains/solana/solana.chain';
+import { BusinessException } from '../common/exceptions/business.exception';
+import { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
 
 @Injectable()
 export class WalletConnectPhantomService {
   private readonly logger = new Logger(WalletConnectPhantomService.name);
   private readonly appPublicUrl: string;
   private readonly swapTimeoutSeconds: number;
-  private readonly swapSlippage: number;
   private readonly telegramBotToken: string;
 
   @Inject(AGGREGATORS_TOKEN)
@@ -53,12 +51,11 @@ export class WalletConnectPhantomService {
   public constructor(
     private readonly configService: ConfigService,
     private readonly sessionStore: WalletConnectSessionStore,
-    private readonly metricsService: MetricsService,
+    private readonly swapExecutionAuditService: SwapExecutionAuditService,
     private readonly solanaChain: SolanaChain,
   ) {
     this.appPublicUrl = this.configService.get<string>('APP_PUBLIC_URL') ?? DEFAULT_APP_PUBLIC_URL;
     this.swapTimeoutSeconds = this.resolveTimeoutSeconds();
-    this.swapSlippage = this.resolveSwapSlippage();
     this.telegramBotToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '';
   }
 
@@ -85,13 +82,11 @@ export class WalletConnectPhantomService {
       expiresAt,
       swapPayload: {
         ...input.swapPayload,
-        slippagePercentage: this.swapSlippage,
       },
       phantom: phantomState,
     };
 
     this.sessionStore.save(session);
-    this.metricsService.incrementSwapRequest('initiated');
 
     return {
       sessionId,
@@ -142,7 +137,12 @@ export class WalletConnectPhantomService {
       return this.buildPhantomSignTransactionUrl(session, transaction);
     } catch (error: unknown) {
       const message = getWalletConnectErrorMessage(error);
-      this.metricsService.incrementSwapRequest('error');
+      await this.swapExecutionAuditService.markError(
+        session.swapPayload.executionId,
+        session.swapPayload.aggregatorName,
+        session.swapPayload.feeMode,
+        message,
+      );
       await this.sendTelegramMessage(
         session.userId,
         `Ошибка подключения Phantom: ${escapeHtml(message)}`,
@@ -190,7 +190,12 @@ export class WalletConnectPhantomService {
           `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
         ].join('\n'),
       );
-      this.metricsService.incrementSwapRequest('success');
+      await this.swapExecutionAuditService.markSuccess(
+        session.swapPayload.executionId,
+        session.swapPayload.aggregatorName,
+        session.swapPayload.feeMode,
+        transactionHash,
+      );
 
       return {
         explorerUrl,
@@ -198,7 +203,12 @@ export class WalletConnectPhantomService {
       };
     } catch (error: unknown) {
       const message = getWalletConnectErrorMessage(error);
-      this.metricsService.incrementSwapRequest('error');
+      await this.swapExecutionAuditService.markError(
+        session.swapPayload.executionId,
+        session.swapPayload.aggregatorName,
+        session.swapPayload.feeMode,
+        message,
+      );
       await this.sendTelegramMessage(session.userId, `Ошибка свопа: ${escapeHtml(message)}`);
       throw new BusinessException(message);
     } finally {
@@ -222,6 +232,7 @@ export class WalletConnectPhantomService {
       buyTokenDecimals: session.swapPayload.buyTokenDecimals,
       fromAddress: walletAddress,
       slippagePercentage: session.swapPayload.slippagePercentage,
+      feeConfig: session.swapPayload.executionFee,
     });
   }
 
@@ -234,17 +245,6 @@ export class WalletConnectPhantomService {
     }
 
     return parsedTimeout;
-  }
-
-  private resolveSwapSlippage(): number {
-    const rawSlippage = this.configService.get<string>('SWAP_SLIPPAGE');
-    const parsedSlippage = Number.parseFloat(rawSlippage ?? `${DEFAULT_SWAP_SLIPPAGE}`);
-
-    if (!Number.isFinite(parsedSlippage) || parsedSlippage <= 0) {
-      return DEFAULT_SWAP_SLIPPAGE;
-    }
-
-    return parsedSlippage;
   }
 
   private getSolanaSession(sessionId: string): IWalletConnectSession {
@@ -400,10 +400,6 @@ export class WalletConnectPhantomService {
       },
       sharedSecret,
     );
-    session.swapPayload = {
-      ...session.swapPayload,
-      slippagePercentage: session.swapPayload.slippagePercentage,
-    };
     session.phantom = {
       ...phantomState,
       walletAddress: this.getRequiredPayloadValue(phantomState.walletAddress, 'walletAddress'),

@@ -1,0 +1,93 @@
+import type { ConfigService } from '@nestjs/config';
+import { describe, expect, it } from 'vitest';
+
+import { FeePolicyService } from '../../src/fees/fee-policy.service';
+import type { ITokenRecord } from '../../src/tokens/tokens.repository';
+
+const ETH_TOKEN: ITokenRecord = {
+  address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+  symbol: 'ETH',
+  decimals: 18,
+  name: 'Ether',
+  chain: 'ethereum',
+};
+
+const USDC_TOKEN: ITokenRecord = {
+  address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+  symbol: 'USDC',
+  decimals: 6,
+  name: 'USD Coin',
+  chain: 'ethereum',
+};
+
+const SOL_TOKEN: ITokenRecord = {
+  address: 'So11111111111111111111111111111111111111112',
+  symbol: 'SOL',
+  decimals: 9,
+  name: 'Solana',
+  chain: 'solana',
+};
+
+const SOLANA_USDC_TOKEN: ITokenRecord = {
+  address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  symbol: 'USDC',
+  decimals: 6,
+  name: 'USD Coin',
+  chain: 'solana',
+};
+
+function createService(values: Record<string, string>): FeePolicyService {
+  const configService: Pick<ConfigService, 'get'> = {
+    get: (key: string) => values[key],
+  };
+
+  return new FeePolicyService(configService as ConfigService);
+}
+
+describe('FeePolicyService', () => {
+  it('должен включать enforced 0x fee по buy token при наличии recipient и bps', () => {
+    const service = createService({
+      ZEROX_FEE_RECIPIENT: '0x1111111111111111111111111111111111111111',
+      ZEROX_FEE_BPS: '25',
+      ZEROX_FEE_TOKEN_MODE: 'buy',
+    });
+
+    const policy = service.getPolicy('0x', 'ethereum', ETH_TOKEN, USDC_TOKEN);
+
+    expect(policy.mode).toBe('enforced');
+    expect(policy.executionFee.kind).toBe('zerox');
+    expect(policy.executionFee.feeAssetSymbol).toBe('USDC');
+  });
+
+  it('должен выбирать Jupiter output fee account раньше input fee account', () => {
+    const service = createService({
+      JUPITER_PLATFORM_FEE_BPS: '20',
+      JUPITER_FEE_ACCOUNT_SOL: 'sol-fee-account',
+      JUPITER_FEE_ACCOUNT_USDC: 'usdc-fee-account',
+    });
+
+    const policy = service.getPolicy('jupiter', 'solana', SOL_TOKEN, SOLANA_USDC_TOKEN);
+
+    expect(policy.mode).toBe('enforced');
+    expect(policy.executionFee.kind).toBe('jupiter');
+
+    if (policy.executionFee.kind !== 'jupiter') {
+      throw new Error('Expected Jupiter fee config');
+    }
+
+    expect(policy.executionFee.feeAssetSide).toBe('buy');
+    expect(policy.executionFee.feeAccount).toBe('usdc-fee-account');
+  });
+
+  it('должен оставлять Odos в tracking_only без enforced fee', () => {
+    const service = createService({
+      ODOS_MONETIZATION_MODE: 'tracking_only',
+    });
+
+    const policy = service.getPolicy('odos', 'ethereum', ETH_TOKEN, USDC_TOKEN);
+
+    expect(policy.mode).toBe('tracking_only');
+    expect(policy.executionFee.kind).toBe('none');
+    expect(policy.isEnabled).toBe(false);
+  });
+});

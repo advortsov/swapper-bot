@@ -2,7 +2,6 @@ import type { ChainType } from '../chains/interfaces/chain.interface';
 
 export const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 export const MIN_SWAP_TIMEOUT_SECONDS = 1;
-export const DEFAULT_SWAP_SLIPPAGE = 0.5;
 export const DEFAULT_APP_PUBLIC_URL = 'https://example.org';
 export const TELEGRAM_API_BASE_URL = 'https://api.telegram.org';
 export const SOLANA_MAINNET_CHAIN_ID = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp';

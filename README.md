@@ -51,9 +51,11 @@ curl http://localhost:3000/health
 /swap 1 SOL to USDC on solana
 ```
 
-`/price` возвращает лучший курс, число опрошенных провайдеров и список котировок по каждому провайдеру.
+`/price` возвращает лучший курс по `net`, число опрошенных провайдеров и по каждому провайдеру показывает `gross`, комиссию бота и итоговый `net`.
 Поддерживаемые сети: `ethereum` (по умолчанию), `arbitrum`, `base`, `optimism`, `solana`.
 Для `solana` поддержаны `/price` и `/swap` через WalletConnect.
+
+`/swap` сначала создаёт server-side intent, затем показывает кнопки выбора агрегатора с opaque callback token. После выбора бот готовит swap-session только для выбранного провайдера и повторно показывает `gross / fee / net` и срок актуальности quote.
 
 ## Проверки качества
 
@@ -69,6 +71,15 @@ npm run typecheck
 npm run test
 npm run build
 ```
+
+## Fee configuration
+
+Комиссии по умолчанию выключены. Чтобы включить monetization:
+
+- `0x`: задать `ZEROX_FEE_RECIPIENT`, `ZEROX_FEE_BPS`, при необходимости `ZEROX_FEE_TOKEN_MODE`.
+- `ParaSwap`: задать `PARASWAP_PARTNER_ADDRESS`, `PARASWAP_FEE_BPS`, `PARASWAP_API_VERSION=6.2`.
+- `Jupiter`: задать `JUPITER_PLATFORM_FEE_BPS` и заранее созданные `JUPITER_FEE_ACCOUNT_<SYMBOL>`.
+- `Odos`: на текущем этапе оставить `ODOS_MONETIZATION_MODE=disabled` или `tracking_only`.
 
 ## Production (VPS + shared PostgreSQL)
 

@@ -7,10 +7,12 @@ import { PriceRuntimeService } from './price.runtime.service';
 import { PriceService } from './price.service';
 import { AggregatorsModule } from '../aggregators/aggregators.module';
 import { ChainsModule } from '../chains/chains.module';
+import { FeesModule } from '../fees/fees.module';
+import { SettingsModule } from '../settings/settings.module';
 import { TokensModule } from '../tokens/tokens.module';
 
 @Module({
-  imports: [TokensModule, ChainsModule, AggregatorsModule],
+  imports: [TokensModule, ChainsModule, AggregatorsModule, FeesModule, SettingsModule],
   providers: [PriceCache, PriceRepository, PriceQuoteService, PriceRuntimeService, PriceService],
   exports: [PriceService, PriceQuoteService],
 })

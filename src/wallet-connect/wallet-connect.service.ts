@@ -4,13 +4,6 @@ import SignClient from '@walletconnect/sign-client';
 import type { SessionTypes } from '@walletconnect/types';
 import { randomUUID } from 'node:crypto';
 
-import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
-import { WalletConnectSessionStore } from './wallet-connect.session-store';
-import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
-import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
-import type { ChainType } from '../chains/interfaces/chain.interface';
-import { BusinessException } from '../common/exceptions/business.exception';
-import { MetricsService } from '../metrics/metrics.service';
 import type {
   ICreateWalletConnectSessionInput,
   IPhantomCallbackQuery,
@@ -25,7 +18,14 @@ import {
   type IWalletConnectChainConfig,
   WALLETCONNECT_ICON_URL,
 } from './wallet-connect.constants';
+import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
+import { WalletConnectSessionStore } from './wallet-connect.session-store';
 import { getWalletConnectErrorMessage, escapeHtml } from './wallet-connect.utils';
+import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
+import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
+import type { ChainType } from '../chains/interfaces/chain.interface';
+import { BusinessException } from '../common/exceptions/business.exception';
+import { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
 
 const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 const TELEGRAM_PREVIEW_DISABLED = true;
@@ -46,7 +46,7 @@ export class WalletConnectService implements OnModuleInit {
   public constructor(
     private readonly configService: ConfigService,
     private readonly sessionStore: WalletConnectSessionStore,
-    private readonly metricsService: MetricsService,
+    private readonly swapExecutionAuditService: SwapExecutionAuditService,
     private readonly phantomService: WalletConnectPhantomService,
   ) {
     this.projectId = this.configService.get<string>('WC_PROJECT_ID') ?? '';
@@ -106,7 +106,6 @@ export class WalletConnectService implements OnModuleInit {
 
     this.sessionStore.save(session);
     this.approvals.set(sessionId, approval);
-    this.metricsService.incrementSwapRequest('initiated');
     void this.handleSessionLifecycle(sessionId);
 
     return {
@@ -137,7 +136,6 @@ export class WalletConnectService implements OnModuleInit {
     const session = this.sessionStore.get(sessionId);
 
     if (!session) {
-      this.metricsService.incrementSwapRequest('error');
       throw new BusinessException('WalletConnect session is not found or expired');
     }
 
@@ -146,20 +144,13 @@ export class WalletConnectService implements OnModuleInit {
     }
 
     const aggregator = this.resolveAggregator(session.swapPayload.aggregatorName);
+    await this.waitForApproval(sessionId, session.expiresAt);
+    const transaction = await this.buildTransactionForSession(session, aggregator, walletAddress);
 
-    try {
-      await this.waitForApproval(sessionId, session.expiresAt);
-      const transaction = await this.buildTransactionForSession(session, aggregator, walletAddress);
+    this.sessionStore.delete(sessionId);
+    this.approvals.delete(sessionId);
 
-      this.sessionStore.delete(sessionId);
-      this.approvals.delete(sessionId);
-      this.metricsService.incrementSwapRequest('success');
-
-      return transaction;
-    } catch (error: unknown) {
-      this.metricsService.incrementSwapRequest('error');
-      throw error;
-    }
+    return transaction;
   }
 
   private ensureWalletConnectConfigured(): void {
@@ -257,11 +248,21 @@ export class WalletConnectService implements OnModuleInit {
           `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
         ].join('\n'),
       );
-      this.metricsService.incrementSwapRequest('success');
+      await this.swapExecutionAuditService.markSuccess(
+        session.swapPayload.executionId,
+        session.swapPayload.aggregatorName,
+        session.swapPayload.feeMode,
+        transactionHash,
+      );
     } catch (error: unknown) {
       const message = this.getErrorMessage(error);
       this.logger.error(`WalletConnect swap failed: ${message}`);
-      this.metricsService.incrementSwapRequest('error');
+      await this.swapExecutionAuditService.markError(
+        session.swapPayload.executionId,
+        session.swapPayload.aggregatorName,
+        session.swapPayload.feeMode,
+        message,
+      );
       await this.sendTelegramMessage(session.userId, `Ошибка свопа: ${this.escapeHtml(message)}`);
     } finally {
       this.sessionStore.delete(sessionId);
@@ -319,6 +320,7 @@ export class WalletConnectService implements OnModuleInit {
       buyTokenDecimals: session.swapPayload.buyTokenDecimals,
       fromAddress: walletAddress,
       slippagePercentage: session.swapPayload.slippagePercentage,
+      feeConfig: session.swapPayload.executionFee,
     });
   }
 

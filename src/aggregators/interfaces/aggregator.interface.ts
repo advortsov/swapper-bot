@@ -1,4 +1,10 @@
 import type { ChainType } from '../../chains/interfaces/chain.interface';
+import type {
+  FeeAssetSide,
+  FeeMode,
+  FeeType,
+  IExecutionFeeConfig,
+} from '../../fees/interfaces/fee-policy.interface';
 
 export interface IQuoteRequest {
   chain: ChainType;
@@ -7,11 +13,24 @@ export interface IQuoteRequest {
   sellAmountBaseUnits: string;
   sellTokenDecimals: number;
   buyTokenDecimals: number;
+  feeConfig: IExecutionFeeConfig;
 }
 
 export interface IQuoteResponse {
   aggregatorName: string;
   toAmountBaseUnits: string;
+  grossToAmountBaseUnits: string;
+  feeAmountBaseUnits: string;
+  feeAmountSymbol: string | null;
+  feeAmountDecimals: number | null;
+  feeBps: number;
+  feeMode: FeeMode;
+  feeType: FeeType;
+  feeDisplayLabel: string;
+  feeAppliedAtQuote: boolean;
+  feeEnforcedOnExecution: boolean;
+  feeAssetSide: FeeAssetSide;
+  executionFee: IExecutionFeeConfig;
   estimatedGasUsd: number | null;
   totalNetworkFeeWei: string | null;
   rawQuote: unknown;
@@ -26,6 +45,7 @@ export interface ISwapRequest {
   buyTokenDecimals: number;
   fromAddress: string;
   slippagePercentage: number;
+  feeConfig: IExecutionFeeConfig;
 }
 
 export interface ISwapTransaction {

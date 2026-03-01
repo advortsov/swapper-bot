@@ -1,21 +1,12 @@
-import type { ConfigService } from '@nestjs/config';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import type { IQuoteResponse } from '../../src/aggregators/interfaces/aggregator.interface';
-import type { ChainType } from '../../src/chains/interfaces/chain.interface';
-import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
-import type { IPreparedPriceInput, IQuoteSelection } from '../../src/price/price.quote.service';
+import type { IQuoteSelection, IPreparedPriceInput } from '../../src/price/price.quote.service';
 import type { PriceQuoteService } from '../../src/price/price.quote.service';
 import type { UserSettingsService } from '../../src/settings/user-settings.service';
+import type { SwapIntentService } from '../../src/swap/swap-intent.service';
 import { SwapService } from '../../src/swap/swap.service';
 import type { WalletConnectService } from '../../src/wallet-connect/wallet-connect.service';
-
-const userSettingsService = {
-  getSettings: async () => ({
-    slippage: 0.5,
-    preferredAggregator: 'auto',
-  }),
-} as unknown as UserSettingsService;
+import { createDisabledFeeConfig, createQuoteResponse } from '../support/fee.fixtures';
 
 const preparedPriceInput: IPreparedPriceInput = {
   normalizedAmount: '10',
@@ -38,210 +29,123 @@ const preparedPriceInput: IPreparedPriceInput = {
   chain: 'ethereum',
 };
 
-const quoteResponse: IQuoteResponse = {
-  aggregatorName: 'paraswap',
-  toAmountBaseUnits: '20200000000',
-  estimatedGasUsd: 0.23,
-  totalNetworkFeeWei: null,
-  rawQuote: {},
-};
-
 const quoteSelection: IQuoteSelection = {
-  bestQuote: quoteResponse,
+  bestQuote: createQuoteResponse({
+    aggregatorName: 'paraswap',
+    chain: 'ethereum',
+    toAmountBaseUnits: '20200000000',
+    estimatedGasUsd: 0.23,
+  }),
   successfulQuotes: [
-    quoteResponse,
-    {
+    createQuoteResponse({
+      aggregatorName: 'paraswap',
+      chain: 'ethereum',
+      toAmountBaseUnits: '20200000000',
+      estimatedGasUsd: 0.23,
+    }),
+    createQuoteResponse({
       aggregatorName: '0x',
+      chain: 'ethereum',
       toAmountBaseUnits: '20150000000',
       estimatedGasUsd: null,
-      totalNetworkFeeWei: null,
-      rawQuote: {},
-    },
+    }),
   ],
   providersPolled: 2,
 };
 
+const priceResponse = {
+  chain: 'ethereum' as const,
+  aggregator: 'paraswap',
+  fromSymbol: 'ETH',
+  toSymbol: 'USDC',
+  fromAmount: '10',
+  toAmount: '20200',
+  grossToAmount: '20200',
+  feeAmount: '0',
+  feeAmountSymbol: null,
+  feeBps: 0,
+  feeMode: 'disabled' as const,
+  feeType: 'no fee' as const,
+  feeDisplayLabel: 'no fee',
+  estimatedGasUsd: 0.23,
+  providersPolled: 2,
+  providerQuotes: [
+    {
+      aggregator: 'paraswap',
+      toAmount: '20200',
+      grossToAmount: '20200',
+      feeAmount: '0',
+      feeAmountSymbol: null,
+      feeBps: 0,
+      feeMode: 'disabled' as const,
+      feeType: 'no fee' as const,
+      feeDisplayLabel: 'no fee',
+      feeAppliedAtQuote: false,
+      feeEnforcedOnExecution: false,
+      estimatedGasUsd: 0.23,
+    },
+    {
+      aggregator: '0x',
+      toAmount: '20150',
+      grossToAmount: '20150',
+      feeAmount: '0',
+      feeAmountSymbol: null,
+      feeBps: 0,
+      feeMode: 'disabled' as const,
+      feeType: 'no fee' as const,
+      feeDisplayLabel: 'no fee',
+      feeAppliedAtQuote: false,
+      feeEnforcedOnExecution: false,
+      estimatedGasUsd: null,
+    },
+  ],
+};
+
+const userSettingsService = {
+  getSettings: async () => ({
+    slippage: 0.5,
+    preferredAggregator: 'auto',
+  }),
+} as unknown as UserSettingsService;
+
 describe('SwapService', () => {
-  it('должен создавать swap-сессию c WalletConnect URI', async () => {
-    const preparedRequests: IPriceRequest[] = [];
-    const sessionPayloads: {
-      chain: ChainType;
-      sellTokenDecimals: number;
-      buyTokenDecimals: number;
-    }[] = [];
+  it('должен создавать persistent intent и возвращать opaque selection tokens', async () => {
     const priceQuoteService: Pick<
       PriceQuoteService,
       'prepare' | 'fetchQuoteSelection' | 'buildResponse'
     > = {
-      prepare: async (request: IPriceRequest): Promise<IPreparedPriceInput> => {
-        preparedRequests.push(request);
-        return preparedPriceInput;
-      },
-      fetchQuoteSelection: async (): Promise<IQuoteSelection> => quoteSelection,
-      buildResponse: () => ({
-        chain: 'ethereum',
-        aggregator: 'paraswap',
-        fromSymbol: 'ETH',
-        toSymbol: 'USDC',
-        fromAmount: '10',
-        toAmount: '20200',
-        estimatedGasUsd: 0.23,
-        providersPolled: 2,
-        providerQuotes: [
-          { aggregator: 'paraswap', toAmount: '20200', estimatedGasUsd: 0.23 },
-          { aggregator: '0x', toAmount: '20150', estimatedGasUsd: null },
-        ],
+      prepare: async () => preparedPriceInput,
+      fetchQuoteSelection: async () => quoteSelection,
+      buildResponse: () => priceResponse,
+    };
+    const swapIntentService: Pick<SwapIntentService, 'createIntent' | 'attachSelectionTokens'> = {
+      createIntent: async () => ({
+        intentId: 'intent-id',
+        quoteExpiresAt: '2026-03-02T00:05:00.000Z',
+        selectionTokens: new Map([
+          ['paraswap', 'tok-1'],
+          ['0x', 'tok-2'],
+        ]),
       }),
-    };
-    const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
-      createSession: async (input) => {
-        sessionPayloads.push({
-          chain: input.swapPayload.chain,
-          sellTokenDecimals: input.swapPayload.sellTokenDecimals,
-          buyTokenDecimals: input.swapPayload.buyTokenDecimals,
-        });
+      attachSelectionTokens: (providerQuotes, selectionTokens) =>
+        providerQuotes.map((quote) => {
+          const selectionToken = selectionTokens.get(quote.aggregator);
 
-        return {
-          sessionId: 'session-id',
-          uri: 'wc:test',
-          expiresAt: '2026-02-27T00:00:00.000Z',
-        };
-      },
+          if (!selectionToken) {
+            return quote;
+          }
+
+          return {
+            ...quote,
+            selectionToken,
+          };
+        }),
     };
-    const configService = { get: () => '0.5' } as unknown as ConfigService;
     const service = new SwapService(
-      configService,
       priceQuoteService as PriceQuoteService,
-      walletConnectService as WalletConnectService,
+      {} as WalletConnectService,
       userSettingsService,
-    );
-
-    const result = await service.createSwapSession({
-      userId: '123',
-      amount: '10',
-      fromSymbol: 'ETH',
-      toSymbol: 'USDC',
-      chain: 'ethereum',
-      rawCommand: '/swap 10 ETH to USDC',
-    });
-
-    expect(preparedRequests).toHaveLength(1);
-    expect(preparedRequests[0]?.chain).toBe('ethereum');
-    expect(sessionPayloads).toEqual([
-      {
-        chain: 'ethereum',
-        sellTokenDecimals: 18,
-        buyTokenDecimals: 6,
-      },
-    ]);
-    expect(result.sessionId).toBe('session-id');
-    expect(result.walletConnectUri).toBe('wc:test');
-    expect(result.chain).toBe('ethereum');
-  });
-
-  it('должен создавать swap-сессию в сети solana через WalletConnect', async () => {
-    const priceQuoteService: Pick<
-      PriceQuoteService,
-      'prepare' | 'fetchQuoteSelection' | 'buildResponse'
-    > = {
-      prepare: async (): Promise<IPreparedPriceInput> => ({
-        ...preparedPriceInput,
-        chain: 'solana',
-        fromToken: {
-          address: 'So11111111111111111111111111111111111111112',
-          symbol: 'SOL',
-          decimals: 9,
-          name: 'Solana',
-          chain: 'solana',
-        },
-        toToken: {
-          address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-          symbol: 'USDC',
-          decimals: 6,
-          name: 'USD Coin',
-          chain: 'solana',
-        },
-        sellAmountBaseUnits: '1000000000',
-      }),
-      fetchQuoteSelection: async (): Promise<IQuoteSelection> => quoteSelection,
-      buildResponse: () => ({
-        chain: 'solana',
-        aggregator: 'jupiter',
-        fromSymbol: 'SOL',
-        toSymbol: 'USDC',
-        fromAmount: '1',
-        toAmount: '150',
-        estimatedGasUsd: null,
-        providersPolled: 1,
-        providerQuotes: [{ aggregator: 'jupiter', toAmount: '150', estimatedGasUsd: null }],
-      }),
-    };
-    const createdSessions: { chain: ChainType }[] = [];
-    const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
-      createSession: async (input) => {
-        createdSessions.push({ chain: input.swapPayload.chain });
-        return {
-          sessionId: 'session-id',
-          uri: 'wc:test-solana',
-          expiresAt: '2026-02-27T00:00:00.000Z',
-        };
-      },
-    };
-    const configService = { get: () => '0.5' } as unknown as ConfigService;
-    const service = new SwapService(
-      configService,
-      priceQuoteService as PriceQuoteService,
-      walletConnectService as WalletConnectService,
-      userSettingsService,
-    );
-
-    const result = await service.createSwapSession({
-      userId: '123',
-      amount: '1',
-      fromSymbol: 'SOL',
-      toSymbol: 'USDC',
-      chain: 'solana',
-      rawCommand: '/swap 1 SOL to USDC on solana',
-    });
-
-    expect(createdSessions).toEqual([{ chain: 'solana' }]);
-    expect(result.walletConnectUri).toBe('wc:test-solana');
-    expect(result.chain).toBe('solana');
-  });
-
-  it('должен возвращать котировки без создания WC-сессии', async () => {
-    const priceQuoteService: Pick<
-      PriceQuoteService,
-      'prepare' | 'fetchQuoteSelection' | 'buildResponse'
-    > = {
-      prepare: async (): Promise<IPreparedPriceInput> => preparedPriceInput,
-      fetchQuoteSelection: async (): Promise<IQuoteSelection> => quoteSelection,
-      buildResponse: () => ({
-        chain: 'ethereum',
-        aggregator: 'paraswap',
-        fromSymbol: 'ETH',
-        toSymbol: 'USDC',
-        fromAmount: '10',
-        toAmount: '20200',
-        estimatedGasUsd: 0.23,
-        providersPolled: 2,
-        providerQuotes: [
-          { aggregator: 'paraswap', toAmount: '20200', estimatedGasUsd: 0.23 },
-          { aggregator: '0x', toAmount: '20150', estimatedGasUsd: null },
-        ],
-      }),
-    };
-    const walletConnectService = {
-      createSession: async () => {
-        throw new Error('should not be called');
-      },
-    };
-    const configService = { get: () => '0.5' } as unknown as ConfigService;
-    const service = new SwapService(
-      configService,
-      priceQuoteService as PriceQuoteService,
-      walletConnectService as unknown as WalletConnectService,
-      userSettingsService,
+      swapIntentService as SwapIntentService,
     );
 
     const result = await service.getSwapQuotes({
@@ -253,11 +157,152 @@ describe('SwapService', () => {
       rawCommand: '/swap 10 ETH to USDC',
     });
 
-    expect(result.chain).toBe('ethereum');
+    expect(result.intentId).toBe('intent-id');
+    expect(result.quoteExpiresAt).toBe('2026-03-02T00:05:00.000Z');
+    expect(result.providerQuotes[0]?.selectionToken).toBe('tok-1');
+    expect(result.providerQuotes[1]?.selectionToken).toBe('tok-2');
+  });
+
+  it('должен создавать WC-сессию из выбранного selection token', async () => {
+    const consumedIntent = {
+      intentId: 'intent-id',
+      userId: '123',
+      chain: 'ethereum' as const,
+      rawCommand: '/swap 10 ETH to USDC',
+      aggregator: 'paraswap',
+      quoteExpiresAt: new Date('2026-03-02T00:05:00.000Z'),
+      quoteSnapshot: {
+        chain: 'ethereum' as const,
+        normalizedAmount: '10',
+        sellAmountBaseUnits: preparedPriceInput.sellAmountBaseUnits,
+        fromToken: preparedPriceInput.fromToken,
+        toToken: preparedPriceInput.toToken,
+        providerQuotes: [
+          {
+            aggregatorName: 'paraswap',
+            grossToAmountBaseUnits: '20200000000',
+            netToAmountBaseUnits: '20200000000',
+            feeAmountBaseUnits: '0',
+            feeAmountSymbol: null,
+            feeAmountDecimals: null,
+            feeBps: 0,
+            feeMode: 'disabled' as const,
+            feeType: 'no fee' as const,
+            feeDisplayLabel: 'no fee',
+            feeAppliedAtQuote: false,
+            feeEnforcedOnExecution: false,
+            feeAssetSide: 'none' as const,
+            executionFee: createDisabledFeeConfig('paraswap', 'ethereum'),
+            estimatedGasUsd: 0.23,
+            totalNetworkFeeWei: null,
+            rawQuoteHash: 'quote-hash',
+          },
+        ],
+      },
+    };
+    const swapIntentService: Pick<
+      SwapIntentService,
+      'consumeSelectionToken' | 'hashPayload' | 'createExecution' | 'markExecutionError'
+    > = {
+      consumeSelectionToken: async () => consumedIntent,
+      hashPayload: () => 'swap-hash',
+      createExecution: async () => 'execution-id',
+      markExecutionError: async () => undefined,
+    };
+    const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
+      createSession: async (input) => {
+        expect(input.swapPayload.executionId).toBe('execution-id');
+        expect(input.swapPayload.executionFee.kind).toBe('none');
+        expect(input.swapPayload.intentId).toBe('intent-id');
+        return {
+          sessionId: 'session-id',
+          uri: 'wc:test',
+          expiresAt: '2026-03-02T00:10:00.000Z',
+        };
+      },
+    };
+    const service = new SwapService(
+      {} as PriceQuoteService,
+      walletConnectService as WalletConnectService,
+      userSettingsService,
+      swapIntentService as SwapIntentService,
+    );
+
+    const result = await service.createSwapSessionFromSelection('123', 'tok-1');
+
+    expect(result.intentId).toBe('intent-id');
     expect(result.aggregator).toBe('paraswap');
-    expect(result.fromAmount).toBe('10');
-    expect(result.toAmount).toBe('20200');
-    expect(result.providersPolled).toBe(2);
-    expect(result.providerQuotes).toHaveLength(2);
+    expect(result.walletConnectUri).toBe('wc:test');
+    expect(result.quoteExpiresAt).toBe('2026-03-02T00:05:00.000Z');
+  });
+
+  it('должен помечать execution как error, если WC-сессия не создалась', async () => {
+    const consumedIntent = {
+      intentId: 'intent-id',
+      userId: '123',
+      chain: 'ethereum' as const,
+      rawCommand: '/swap 10 ETH to USDC',
+      aggregator: 'paraswap',
+      quoteExpiresAt: new Date('2026-03-02T00:05:00.000Z'),
+      quoteSnapshot: {
+        chain: 'ethereum' as const,
+        normalizedAmount: '10',
+        sellAmountBaseUnits: preparedPriceInput.sellAmountBaseUnits,
+        fromToken: preparedPriceInput.fromToken,
+        toToken: preparedPriceInput.toToken,
+        providerQuotes: [
+          {
+            aggregatorName: 'paraswap',
+            grossToAmountBaseUnits: '20200000000',
+            netToAmountBaseUnits: '20200000000',
+            feeAmountBaseUnits: '0',
+            feeAmountSymbol: null,
+            feeAmountDecimals: null,
+            feeBps: 0,
+            feeMode: 'disabled' as const,
+            feeType: 'no fee' as const,
+            feeDisplayLabel: 'no fee',
+            feeAppliedAtQuote: false,
+            feeEnforcedOnExecution: false,
+            feeAssetSide: 'none' as const,
+            executionFee: createDisabledFeeConfig('paraswap', 'ethereum'),
+            estimatedGasUsd: 0.23,
+            totalNetworkFeeWei: null,
+            rawQuoteHash: 'quote-hash',
+          },
+        ],
+      },
+    };
+    const markExecutionError = vi.fn().mockResolvedValue(undefined);
+    const swapIntentService: Pick<
+      SwapIntentService,
+      'consumeSelectionToken' | 'hashPayload' | 'createExecution' | 'markExecutionError'
+    > = {
+      consumeSelectionToken: async () => consumedIntent,
+      hashPayload: () => 'swap-hash',
+      createExecution: async () => 'execution-id',
+      markExecutionError,
+    };
+    const walletConnectService: Pick<WalletConnectService, 'createSession'> = {
+      createSession: async () => {
+        throw new Error('WalletConnect init failed');
+      },
+    };
+    const service = new SwapService(
+      {} as PriceQuoteService,
+      walletConnectService as WalletConnectService,
+      userSettingsService,
+      swapIntentService as SwapIntentService,
+    );
+
+    await expect(service.createSwapSessionFromSelection('123', 'tok-1')).rejects.toThrowError(
+      'WalletConnect init failed',
+    );
+    expect(markExecutionError).toHaveBeenCalledWith(
+      'execution-id',
+      'paraswap',
+      'disabled',
+      'WalletConnect init failed',
+    );
   });
 });

@@ -25,6 +25,9 @@ const BPS_PERCENT_MULTIPLIER = 100;
 
 interface IJupiterQuoteResponse {
   outAmount: string;
+  platformFee?: {
+    amount: string;
+  };
 }
 
 interface IJupiterSwapResponse {
@@ -74,11 +77,12 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async getQuote(params: IQuoteRequest): Promise<IQuoteResponse> {
-    const url = this.buildQuoteUrl(
-      params.sellTokenAddress,
-      params.buyTokenAddress,
-      params.sellAmountBaseUnits,
-    );
+    const url = this.buildQuoteUrl({
+      inputMint: params.sellTokenAddress,
+      outputMint: params.buyTokenAddress,
+      amount: params.sellAmountBaseUnits,
+      feeConfig: params.feeConfig,
+    });
     const startedAt = Date.now();
 
     try {
@@ -96,6 +100,18 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
       return {
         aggregatorName: this.name,
         toAmountBaseUnits: response.body.outAmount,
+        grossToAmountBaseUnits: response.body.outAmount,
+        feeAmountBaseUnits: response.body.platformFee?.amount ?? '0',
+        feeAmountSymbol: null,
+        feeAmountDecimals: null,
+        feeBps: 0,
+        feeMode: 'disabled',
+        feeType: 'no fee',
+        feeDisplayLabel: 'no fee',
+        feeAppliedAtQuote: false,
+        feeEnforcedOnExecution: false,
+        feeAssetSide: 'none',
+        executionFee: params.feeConfig,
         estimatedGasUsd: null,
         totalNetworkFeeWei: null,
         rawQuote: response.body,
@@ -107,12 +123,13 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction> {
-    const quoteUrl = this.buildQuoteUrl(
-      params.sellTokenAddress,
-      params.buyTokenAddress,
-      params.sellAmountBaseUnits,
-      this.toSlippageBps(params.slippagePercentage),
-    );
+    const quoteUrl = this.buildQuoteUrl({
+      inputMint: params.sellTokenAddress,
+      outputMint: params.buyTokenAddress,
+      amount: params.sellAmountBaseUnits,
+      feeConfig: params.feeConfig,
+      slippageBps: this.toSlippageBps(params.slippagePercentage),
+    });
     const startedAt = Date.now();
 
     try {
@@ -127,6 +144,7 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
         userPublicKey: params.fromAddress,
         dynamicComputeUnitLimit: true,
         dynamicSlippage: true,
+        feeAccount: this.getFeeAccount(params.feeConfig),
       });
       this.observeRequest(swapResponse.statusCode.toString(), startedAt, 'POST');
 
@@ -149,11 +167,24 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async healthCheck(): Promise<boolean> {
-    const url = this.buildQuoteUrl(
-      HEALTHCHECK_INPUT_MINT,
-      HEALTHCHECK_OUTPUT_MINT,
-      HEALTHCHECK_AMOUNT,
-    );
+    const url = this.buildQuoteUrl({
+      inputMint: HEALTHCHECK_INPUT_MINT,
+      outputMint: HEALTHCHECK_OUTPUT_MINT,
+      amount: HEALTHCHECK_AMOUNT,
+      feeConfig: {
+        kind: 'none',
+        aggregatorName: this.name,
+        chain: 'solana',
+        mode: 'disabled',
+        feeType: 'no fee',
+        feeBps: 0,
+        feeAssetSide: 'none',
+        feeAssetAddress: null,
+        feeAssetSymbol: null,
+        feeAppliedAtQuote: false,
+        feeEnforcedOnExecution: false,
+      },
+    });
 
     try {
       const response = await this.getJson(url, this.buildHeaders());
@@ -163,18 +194,20 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
     }
   }
 
-  private buildQuoteUrl(
-    inputMint: string,
-    outputMint: string,
-    amount: string,
-    slippageBps: string = DEFAULT_SLIPPAGE_BPS,
-  ): URL {
+  private buildQuoteUrl(input: {
+    inputMint: string;
+    outputMint: string;
+    amount: string;
+    feeConfig: IQuoteRequest['feeConfig'];
+    slippageBps?: string;
+  }): URL {
     const url = new URL(JUPITER_QUOTE_PATH, this.apiBaseUrl);
-    url.searchParams.set('inputMint', inputMint);
-    url.searchParams.set('outputMint', outputMint);
-    url.searchParams.set('amount', amount);
-    url.searchParams.set('slippageBps', slippageBps);
+    url.searchParams.set('inputMint', input.inputMint);
+    url.searchParams.set('outputMint', input.outputMint);
+    url.searchParams.set('amount', input.amount);
+    url.searchParams.set('slippageBps', input.slippageBps ?? DEFAULT_SLIPPAGE_BPS);
     url.searchParams.set('restrictIntermediateTokens', RESTRICT_INTERMEDIATE_TOKENS);
+    this.applyFeeParams(url, input.feeConfig);
     return url;
   }
 
@@ -211,6 +244,22 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
 
   private toSlippageBps(slippagePercentage: number): string {
     return `${Math.max(Math.round(slippagePercentage * BPS_PERCENT_MULTIPLIER), 1)}`;
+  }
+
+  private applyFeeParams(url: URL, feeConfig: IQuoteRequest['feeConfig']): void {
+    if (feeConfig.kind !== 'jupiter' || feeConfig.mode !== 'enforced') {
+      return;
+    }
+
+    url.searchParams.set('platformFeeBps', `${feeConfig.feeBps}`);
+  }
+
+  private getFeeAccount(feeConfig: ISwapRequest['feeConfig']): string | undefined {
+    if (feeConfig.kind !== 'jupiter' || feeConfig.mode !== 'enforced') {
+      return undefined;
+    }
+
+    return feeConfig.feeAccount;
   }
 
   private observeRequest(

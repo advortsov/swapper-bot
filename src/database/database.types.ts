@@ -32,8 +32,59 @@ export interface IRequestsTable {
   created_at: Generated<Date>;
 }
 
+export interface ISwapIntentsTable {
+  id: string;
+  user_id: string;
+  chain: string;
+  from_symbol: string;
+  to_symbol: string;
+  amount: string;
+  raw_command: string;
+  quote_snapshot: ColumnType<JsonValue, JsonValue, JsonValue>;
+  allowed_aggregators: string[];
+  best_aggregator: string;
+  quote_expires_at: Date;
+  status: string;
+  created_at: Generated<Date>;
+  selected_aggregator: string | null;
+  selected_at: Date | null;
+}
+
+export interface ISwapIntentOptionsTable {
+  selection_token: string;
+  intent_id: string;
+  aggregator: string;
+  created_at: Generated<Date>;
+  consumed_at: Date | null;
+}
+
+export interface ISwapExecutionsTable {
+  id: string;
+  intent_id: string;
+  user_id: string;
+  chain: string;
+  aggregator: string;
+  fee_mode: string;
+  fee_bps: number;
+  fee_recipient: string | null;
+  gross_to_amount: string;
+  bot_fee_amount: string;
+  net_to_amount: string;
+  quote_payload_hash: string;
+  swap_payload_hash: string;
+  provider_reference: string | null;
+  tx_hash: string | null;
+  status: string;
+  error_message: string | null;
+  created_at: Generated<Date>;
+  executed_at: Date | null;
+}
+
 export interface IDatabase {
   users: IUsersTable;
   tokens: ITokensTable;
   requests: IRequestsTable;
+  swap_intents: ISwapIntentsTable;
+  swap_intent_options: ISwapIntentOptionsTable;
+  swap_executions: ISwapExecutionsTable;
 }

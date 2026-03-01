@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OdosAggregator } from '../../src/aggregators/odos/odos.aggregator';
 import type { MetricsService } from '../../src/metrics/metrics.service';
+import { createDisabledFeeConfig } from '../support/fee.fixtures';
 
 const ODOS_API_BASE_URL = 'https://api.odos.xyz';
 const ETH_PSEUDO_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
@@ -48,6 +49,7 @@ describe('OdosAggregator', () => {
       sellAmountBaseUnits: '1000000000000000',
       sellTokenDecimals: 18,
       buyTokenDecimals: 6,
+      feeConfig: createDisabledFeeConfig('odos', 'ethereum'),
     });
 
     const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
@@ -92,6 +94,7 @@ describe('OdosAggregator', () => {
       buyTokenDecimals: 6,
       fromAddress: '0x000000000000000000000000000000000000dEaD',
       slippagePercentage: 0.5,
+      feeConfig: createDisabledFeeConfig('odos', 'ethereum'),
     });
 
     expect(transaction).toEqual({

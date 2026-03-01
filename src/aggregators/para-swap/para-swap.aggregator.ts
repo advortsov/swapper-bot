@@ -31,6 +31,8 @@ const HEALTHCHECK_SELL_AMOUNT = '1000000000000000';
 const ZERO_BIGINT = 0n;
 const REQUEST_TIMEOUT_MS = 10_000;
 const ERROR_BODY_MAX_LENGTH = 300;
+const DEFAULT_PARASWAP_API_VERSION = '6.2';
+const EXCLUDE_METHODS_WITHOUT_FEE_MODEL = 'true';
 
 interface IParaSwapPriceRoute {
   destAmount: string;
@@ -87,6 +89,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   public readonly supportedChains = PARASWAP_SUPPORTED_CHAINS;
 
   private readonly apiBaseUrl: string;
+  private readonly apiVersion: string;
 
   public constructor(
     private readonly configService: ConfigService,
@@ -95,6 +98,8 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
     super();
     this.apiBaseUrl =
       this.configService.get<string>('PARASWAP_API_BASE_URL') ?? DEFAULT_PARASWAP_API_BASE_URL;
+    this.apiVersion =
+      this.configService.get<string>('PARASWAP_API_VERSION') ?? DEFAULT_PARASWAP_API_VERSION;
   }
 
   public async getQuote(params: IQuoteRequest): Promise<IQuoteResponse> {
@@ -114,6 +119,18 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       return {
         aggregatorName: this.name,
         toAmountBaseUnits: response.body.priceRoute.destAmount,
+        grossToAmountBaseUnits: response.body.priceRoute.destAmount,
+        feeAmountBaseUnits: '0',
+        feeAmountSymbol: null,
+        feeAmountDecimals: null,
+        feeBps: 0,
+        feeMode: 'disabled',
+        feeType: 'no fee',
+        feeDisplayLabel: 'no fee',
+        feeAppliedAtQuote: false,
+        feeEnforcedOnExecution: false,
+        feeAssetSide: 'none',
+        executionFee: params.feeConfig,
         estimatedGasUsd: this.parseGasUsd(response.body.priceRoute.gasCostUSD),
         totalNetworkFeeWei: null,
         rawQuote: response.body,
@@ -132,6 +149,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       sellAmountBaseUnits: params.sellAmountBaseUnits,
       sellTokenDecimals: params.sellTokenDecimals,
       buyTokenDecimals: params.buyTokenDecimals,
+      feeConfig: params.feeConfig,
     });
     const startedAt = Date.now();
 
@@ -156,6 +174,8 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
         userAddress: params.fromAddress,
         slippage: params.slippagePercentage,
         priceRoute: priceResponse.body.priceRoute,
+        partnerAddress: this.getPartnerAddress(params.feeConfig),
+        partnerFeeBps: this.getPartnerFeeBps(params.feeConfig),
       });
 
       this.observeRequest(transactionResponse.statusCode.toString(), startedAt);
@@ -198,6 +218,8 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
     url.searchParams.set('destDecimals', `${params.buyTokenDecimals}`);
     url.searchParams.set('side', SELL_SIDE);
     url.searchParams.set('network', network);
+    url.searchParams.set('version', this.apiVersion);
+    this.applyQuoteFeeParams(url, params.feeConfig);
 
     return url;
   }
@@ -212,8 +234,22 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
     url.searchParams.set('destDecimals', USDC_DECIMALS);
     url.searchParams.set('side', SELL_SIDE);
     url.searchParams.set('network', NETWORK_BY_CHAIN.ethereum);
+    url.searchParams.set('version', this.apiVersion);
 
     return url;
+  }
+
+  private applyQuoteFeeParams(url: URL, feeConfig: IQuoteRequest['feeConfig']): void {
+    if (feeConfig.kind !== 'paraswap' || feeConfig.mode !== 'enforced') {
+      return;
+    }
+
+    url.searchParams.set('partnerAddress', feeConfig.partnerAddress);
+    url.searchParams.set('partnerFeeBps', `${feeConfig.feeBps}`);
+    url.searchParams.set(
+      'excludeContractMethodsWithoutFeeModel',
+      EXCLUDE_METHODS_WITHOUT_FEE_MODEL,
+    );
   }
 
   private normalizeToken(tokenAddress: string): string {
@@ -241,6 +277,22 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
 
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private getPartnerAddress(feeConfig: ISwapRequest['feeConfig']): string | undefined {
+    if (feeConfig.kind !== 'paraswap' || feeConfig.mode !== 'enforced') {
+      return undefined;
+    }
+
+    return feeConfig.partnerAddress;
+  }
+
+  private getPartnerFeeBps(feeConfig: ISwapRequest['feeConfig']): number | undefined {
+    if (feeConfig.kind !== 'paraswap' || feeConfig.mode !== 'enforced') {
+      return undefined;
+    }
+
+    return feeConfig.feeBps;
   }
 
   private async postJson(

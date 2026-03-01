@@ -6,9 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { IAggregator } from '../../src/aggregators/interfaces/aggregator.interface';
 import type { SolanaChain } from '../../src/chains/solana/solana.chain';
-import type { MetricsService } from '../../src/metrics/metrics.service';
+import type { SwapExecutionAuditService } from '../../src/swap/swap-execution-audit.service';
 import { WalletConnectPhantomService } from '../../src/wallet-connect/wallet-connect.phantom.service';
 import { WalletConnectSessionStore } from '../../src/wallet-connect/wallet-connect.session-store';
+import { createDisabledFeeConfig } from '../support/fee.fixtures';
 
 function encryptPayload(
   payload: object,
@@ -44,8 +45,9 @@ describe('WalletConnectPhantomService', () => {
     const configService: Pick<ConfigService, 'get'> = {
       get: (key: string) => configValues[key],
     };
-    const metricsService: Pick<MetricsService, 'incrementSwapRequest'> = {
-      incrementSwapRequest: vi.fn(),
+    const auditService: Pick<SwapExecutionAuditService, 'markError' | 'markSuccess'> = {
+      markError: vi.fn().mockResolvedValue(undefined),
+      markSuccess: vi.fn().mockResolvedValue(undefined),
     };
     const aggregator: IAggregator = {
       name: 'jupiter',
@@ -74,7 +76,7 @@ describe('WalletConnectPhantomService', () => {
     const service = new WalletConnectPhantomService(
       configService as ConfigService,
       sessionStore,
-      metricsService as MetricsService,
+      auditService as SwapExecutionAuditService,
       solanaChain as SolanaChain,
     );
     (
@@ -86,14 +88,29 @@ describe('WalletConnectPhantomService', () => {
     const session = await service.createSession({
       userId: '12345',
       swapPayload: {
+        intentId: 'intent-id',
+        executionId: 'execution-id',
         chain: 'solana',
         aggregatorName: 'jupiter',
+        fromSymbol: 'SOL',
+        toSymbol: 'USDC',
         sellTokenAddress: 'So11111111111111111111111111111111111111112',
         buyTokenAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
         sellAmountBaseUnits: '1000000000',
         sellTokenDecimals: 9,
         buyTokenDecimals: 6,
         slippagePercentage: 0.5,
+        grossToAmountBaseUnits: '150000000',
+        netToAmountBaseUnits: '150000000',
+        feeAmountBaseUnits: '0',
+        feeAmountSymbol: null,
+        feeAmountDecimals: null,
+        feeMode: 'disabled',
+        feeType: 'no fee',
+        feeBps: 0,
+        feeDisplayLabel: 'no fee',
+        feeAssetSide: 'none',
+        executionFee: createDisabledFeeConfig('jupiter', 'solana'),
       },
     });
 

@@ -8,10 +8,13 @@ import type {
   ISwapTransaction,
 } from '../../src/aggregators/interfaces/aggregator.interface';
 import type { IChain, ChainType } from '../../src/chains/interfaces/chain.interface';
+import type { IFeePolicy } from '../../src/fees/interfaces/fee-policy.interface';
+import { QuoteMonetizationService } from '../../src/fees/quote-monetization.service';
 import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
 import { PriceQuoteService } from '../../src/price/price.quote.service';
 import type { ITokenRecord } from '../../src/tokens/tokens.repository';
 import type { TokensService } from '../../src/tokens/tokens.service';
+import { createDisabledFeeConfig, createQuoteResponse } from '../support/fee.fixtures';
 
 const FROM_TOKEN: ITokenRecord = {
   address: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
@@ -67,11 +70,13 @@ class FakeAggregator implements IAggregator {
     }
 
     return {
-      aggregatorName: this.name,
-      toAmountBaseUnits: this.toAmountBaseUnits,
-      estimatedGasUsd: null,
-      totalNetworkFeeWei: null,
-      rawQuote: {},
+      ...createQuoteResponse({
+        aggregatorName: this.name,
+        chain: params.chain,
+        toAmountBaseUnits: this.toAmountBaseUnits,
+        estimatedGasUsd: null,
+      }),
+      executionFee: params.feeConfig,
     };
   }
 
@@ -123,7 +128,33 @@ function createService(
     },
   };
 
-  return new PriceQuoteService(aggregators, tokensService as TokensService, chains);
+  const feePolicyService = {
+    getPolicy: (aggregatorName: string, chain: ChainType): IFeePolicy => ({
+      aggregatorName,
+      chain,
+      mode: 'disabled',
+      feeType: 'no fee',
+      feeBps: 0,
+      displayLabel: 'no fee',
+      isEnabled: false,
+      executionFee: createDisabledFeeConfig(aggregatorName, chain),
+    }),
+  };
+  const quoteMonetizationService = new QuoteMonetizationService(
+    {
+      incrementSwapFeeQuote: () => undefined,
+      addExpectedFeeAmount: () => undefined,
+      incrementSwapFeeMissingConfiguration: () => undefined,
+    } as never,
+    feePolicyService as never,
+  );
+
+  return new PriceQuoteService(
+    aggregators,
+    tokensService as TokensService,
+    chains,
+    quoteMonetizationService,
+  );
 }
 
 describe('PriceQuoteService', () => {
@@ -180,6 +211,23 @@ describe('PriceQuoteService', () => {
 
     await expect(service.fetchQuoteSelection(preparedInput)).rejects.toThrowError(
       'No aggregators configured for chain ethereum',
+    );
+  });
+
+  it('должен выбрасывать ошибку, если выбранный агрегатор не поддерживается в сети', async () => {
+    const paraSwap = new FakeAggregator({
+      name: 'paraswap',
+      toAmountBaseUnits: '10500000',
+      supportedChains: ['ethereum'],
+    });
+    const service = createService([paraSwap]);
+    const preparedInput = await service.prepare({
+      ...priceRequest,
+      chain: 'ethereum',
+    });
+
+    await expect(service.fetchQuoteSelection(preparedInput, 'jupiter')).rejects.toThrowError(
+      'Aggregator jupiter is not configured for chain ethereum',
     );
   });
 

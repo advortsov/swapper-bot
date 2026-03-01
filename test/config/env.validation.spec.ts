@@ -63,4 +63,15 @@ describe('validateEnvironment', () => {
       'Environment variable "APP_PUBLIC_URL" must be a valid URL',
     );
   });
+
+  it('должен выбрасывать ошибку при невалидном ZEROX_FEE_BPS', () => {
+    const environmentWithInvalidFeeBps = {
+      ...validEnvironment,
+      ZEROX_FEE_BPS: '10001',
+    };
+
+    expect(() => validateEnvironment(environmentWithInvalidFeeBps)).toThrowError(
+      'Environment variable "ZEROX_FEE_BPS" must be an integer between 0 and 10000',
+    );
+  });
 });

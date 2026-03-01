@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { JupiterAggregator } from '../../src/aggregators/jupiter/jupiter.aggregator';
 import type { MetricsService } from '../../src/metrics/metrics.service';
+import { createDisabledFeeConfig } from '../support/fee.fixtures';
 
 const JUPITER_API_BASE_URL = 'https://lite-api.jup.ag';
 
@@ -44,6 +45,7 @@ describe('JupiterAggregator', () => {
       sellAmountBaseUnits: '100000000',
       sellTokenDecimals: 9,
       buyTokenDecimals: 6,
+      feeConfig: createDisabledFeeConfig('jupiter', 'solana'),
     });
 
     expect(quote.aggregatorName).toBe('jupiter');
@@ -83,6 +85,7 @@ describe('JupiterAggregator', () => {
       buyTokenDecimals: 6,
       fromAddress: 'jdocuPgEAjMfihABsPgKEvYtsmMzjUHeq9LX4Hvs7f3',
       slippagePercentage: 0.5,
+      feeConfig: createDisabledFeeConfig('jupiter', 'solana'),
     });
 
     expect(transaction).toEqual({
