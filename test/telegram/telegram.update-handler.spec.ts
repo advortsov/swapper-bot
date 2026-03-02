@@ -102,6 +102,7 @@ describe('TelegramUpdateHandler', () => {
 
     expect(messageText).toContain('Комиссия бота: 0.3 USDC');
     expect(messageText).toContain('Срок актуальности свопа: 5 мин');
+    expect(messageText).toContain('Итоговая транзакция будет собрана уже с учётом комиссии бота.');
     expect(messageText).toContain('Доступные котировки:');
     expect(messageText).toContain('- jupiter: gross 150 USDC');
     expect(firstButton?.text).toContain('native fee: 0.3 USDC');
@@ -234,6 +235,7 @@ describe('TelegramUpdateHandler', () => {
     expect(callbackText).toContain('Комиссия бота: 0.3 USDC');
     expect(callbackText).toContain('Сессия истекает: 28.02.2026 03:00');
     expect(callbackText).toContain('Котировка актуальна до: 28.02.2026 03:00');
+    expect(callbackText).toContain('Итоговая транзакция уже собрана с учётом комиссии бота.');
     expect(replyWithPhoto).toHaveBeenCalledTimes(1);
   });
 });

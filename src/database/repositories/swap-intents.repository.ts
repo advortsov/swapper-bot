@@ -151,4 +151,13 @@ export class SwapIntentsRepository {
         };
       });
   }
+
+  public async updateStatus(intentId: string, status: string): Promise<void> {
+    await this.databaseService
+      .getConnection()
+      .updateTable('swap_intents')
+      .set({ status })
+      .where('id', '=', intentId)
+      .execute();
+  }
 }

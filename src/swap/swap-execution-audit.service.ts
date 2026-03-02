@@ -4,12 +4,14 @@ import {
   type ICreateSwapExecutionPayload,
   SwapExecutionsRepository,
 } from '../database/repositories/swap-executions.repository';
+import { SwapIntentsRepository } from '../database/repositories/swap-intents.repository';
 import { MetricsService } from '../metrics/metrics.service';
 
 @Injectable()
 export class SwapExecutionAuditService {
   public constructor(
     private readonly swapExecutionsRepository: SwapExecutionsRepository,
+    private readonly swapIntentsRepository: SwapIntentsRepository,
     private readonly metricsService: MetricsService,
   ) {}
 
@@ -27,6 +29,7 @@ export class SwapExecutionAuditService {
     txHash: string,
   ): Promise<void> {
     await this.swapExecutionsRepository.markSuccess(executionId, txHash);
+    await this.updateIntentStatus(executionId, 'completed');
     this.metricsService.incrementSwapRequest('success');
     this.metricsService.incrementSwapFeeExecution(aggregator, feeMode, 'success');
   }
@@ -38,6 +41,7 @@ export class SwapExecutionAuditService {
     errorMessage: string,
   ): Promise<void> {
     await this.swapExecutionsRepository.markError(executionId, errorMessage);
+    await this.updateIntentStatus(executionId, 'failed');
     this.metricsService.incrementSwapRequest('error');
     this.metricsService.incrementSwapFeeExecution(aggregator, feeMode, 'error');
   }
@@ -47,5 +51,16 @@ export class SwapExecutionAuditService {
     providerReference: string,
   ): Promise<void> {
     await this.swapExecutionsRepository.updateProviderReference(executionId, providerReference);
+    await this.updateIntentStatus(executionId, 'session_created');
+  }
+
+  private async updateIntentStatus(executionId: string, status: string): Promise<void> {
+    const intentId = await this.swapExecutionsRepository.findIntentId(executionId);
+
+    if (!intentId) {
+      return;
+    }
+
+    await this.swapIntentsRepository.updateStatus(intentId, status);
   }
 }

@@ -279,6 +279,7 @@ export class TelegramUpdateHandler {
       `Срок актуальности свопа: ${formatSwapValidity(quotes.quoteExpiresAt)}`,
       `Котировка актуальна до: ${this.formatDate(quotes.quoteExpiresAt)}`,
       `Провайдеров опрошено: ${quotes.providersPolled}`,
+      'Итоговая транзакция будет собрана уже с учётом комиссии бота.',
       '',
       'Доступные котировки:',
       ...providerQuoteLines,
@@ -299,6 +300,7 @@ export class TelegramUpdateHandler {
       `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
       `Срок актуальности свопа: ${formatSwapValidity(session.quoteExpiresAt)}`,
       `Котировка актуальна до: ${this.formatDate(session.quoteExpiresAt)}`,
+      'Итоговая транзакция уже собрана с учётом комиссии бота.',
       this.getConnectionHint(session.chain),
     ].join('\n');
   }

@@ -91,4 +91,15 @@ export class SwapExecutionsRepository {
       .where('id', '=', executionId)
       .execute();
   }
+
+  public async findIntentId(executionId: string): Promise<string | null> {
+    const row = await this.databaseService
+      .getConnection()
+      .selectFrom('swap_executions')
+      .select('intent_id as intentId')
+      .where('id', '=', executionId)
+      .executeTakeFirst();
+
+    return row?.intentId ?? null;
+  }
 }
