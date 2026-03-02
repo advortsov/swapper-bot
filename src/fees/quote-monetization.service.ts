@@ -33,14 +33,23 @@ export class QuoteMonetizationService {
     sellAmountBaseUnits: string;
   }): IQuoteResponse {
     const { rawQuote, feePolicy, fromToken, toToken, sellAmountBaseUnits } = input;
-    const grossToAmountBaseUnits = rawQuote.grossToAmountBaseUnits || rawQuote.toAmountBaseUnits;
-    const feeAmountBaseUnits = this.calculateFeeAmount(
+    const hasProviderFeeBreakdown = this.hasProviderFeeBreakdown(rawQuote, feePolicy);
+    const feeAmountBaseUnits = hasProviderFeeBreakdown
+      ? rawQuote.feeAmountBaseUnits
+      : this.calculateFeeAmount(
+          feePolicy,
+          rawQuote.grossToAmountBaseUnits || rawQuote.toAmountBaseUnits,
+          sellAmountBaseUnits,
+        );
+    const grossToAmountBaseUnits = this.resolveGrossToAmountBaseUnits(
+      rawQuote,
       feePolicy,
-      grossToAmountBaseUnits,
-      sellAmountBaseUnits,
+      feeAmountBaseUnits,
+      hasProviderFeeBreakdown,
     );
-    const netToAmountBaseUnits =
-      feePolicy.executionFee.feeAssetSide === 'buy'
+    const netToAmountBaseUnits = hasProviderFeeBreakdown
+      ? rawQuote.toAmountBaseUnits
+      : feePolicy.executionFee.feeAssetSide === 'buy'
         ? this.subtractFee(grossToAmountBaseUnits, feeAmountBaseUnits)
         : grossToAmountBaseUnits;
     const feeAmountSymbol = this.resolveFeeAmountSymbol(
@@ -89,6 +98,39 @@ export class QuoteMonetizationService {
     }
 
     return quote;
+  }
+
+  private hasProviderFeeBreakdown(rawQuote: IQuoteResponse, feePolicy: IFeePolicy): boolean {
+    return (
+      feePolicy.mode === 'enforced' &&
+      feePolicy.executionFee.feeAppliedAtQuote &&
+      BigInt(rawQuote.feeAmountBaseUnits) > ZERO_BIGINT
+    );
+  }
+
+  private resolveGrossToAmountBaseUnits(
+    rawQuote: IQuoteResponse,
+    feePolicy: IFeePolicy,
+    feeAmountBaseUnits: string,
+    hasProviderFeeBreakdown: boolean,
+  ): string {
+    if (!hasProviderFeeBreakdown) {
+      return rawQuote.grossToAmountBaseUnits || rawQuote.toAmountBaseUnits;
+    }
+
+    const declaredGross = BigInt(rawQuote.grossToAmountBaseUnits);
+    const declaredNet = BigInt(rawQuote.toAmountBaseUnits);
+    const feeAmount = BigInt(feeAmountBaseUnits);
+
+    if (declaredGross > declaredNet) {
+      return rawQuote.grossToAmountBaseUnits;
+    }
+
+    if (feePolicy.executionFee.feeAssetSide !== 'buy') {
+      return rawQuote.toAmountBaseUnits;
+    }
+
+    return (declaredNet + feeAmount).toString();
   }
 
   private calculateFeeAmount(

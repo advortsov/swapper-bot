@@ -139,4 +139,62 @@ describe('QuoteMonetizationService', () => {
     expect(monetized.feeAmountSymbol).toBe('SOL');
     expect(monetized.feeAmountBaseUnits).toBe('2000000');
   });
+
+  it('должен не вычитать fee повторно, если провайдер уже вернул fee-aware output', () => {
+    const service = new QuoteMonetizationService(
+      {
+        incrementSwapFeeQuote: vi.fn(),
+        addExpectedFeeAmount: vi.fn(),
+        incrementSwapFeeMissingConfiguration: vi.fn(),
+      } as never,
+      {
+        getPolicy: vi.fn(),
+      } as never,
+    );
+    const quote = {
+      ...createQuoteResponse({
+        aggregatorName: '0x',
+        chain: 'ethereum',
+        toAmountBaseUnits: '990000',
+        estimatedGasUsd: null,
+      }),
+      grossToAmountBaseUnits: '1000000',
+      feeAmountBaseUnits: '10000',
+    };
+
+    const monetized = service.applyPolicy({
+      rawQuote: quote,
+      feePolicy: {
+        aggregatorName: '0x',
+        chain: 'ethereum',
+        mode: 'enforced',
+        feeType: 'native fee',
+        feeBps: 100,
+        displayLabel: 'native fee',
+        isEnabled: true,
+        executionFee: {
+          kind: 'zerox',
+          aggregatorName: '0x',
+          chain: 'ethereum',
+          mode: 'enforced',
+          feeType: 'native fee',
+          feeBps: 100,
+          feeAssetSide: 'buy',
+          feeAssetAddress: TO_TOKEN.address,
+          feeAssetSymbol: TO_TOKEN.symbol,
+          feeAppliedAtQuote: true,
+          feeEnforcedOnExecution: true,
+          feeRecipient: '0x1111111111111111111111111111111111111111',
+          feeTokenAddress: TO_TOKEN.address,
+        },
+      },
+      fromToken: FROM_TOKEN,
+      toToken: TO_TOKEN,
+      sellAmountBaseUnits: '1000000000000000000',
+    });
+
+    expect(monetized.grossToAmountBaseUnits).toBe('1000000');
+    expect(monetized.feeAmountBaseUnits).toBe('10000');
+    expect(monetized.toAmountBaseUnits).toBe('990000');
+  });
 });

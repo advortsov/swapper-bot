@@ -97,11 +97,18 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('Jupiter quote amount is missing');
       }
 
+      const feeAmountBaseUnits = response.body.platformFee?.amount ?? '0';
+      const grossToAmountBaseUnits = this.resolveGrossToAmountBaseUnits(
+        response.body.outAmount,
+        feeAmountBaseUnits,
+        params.feeConfig,
+      );
+
       return {
         aggregatorName: this.name,
         toAmountBaseUnits: response.body.outAmount,
-        grossToAmountBaseUnits: response.body.outAmount,
-        feeAmountBaseUnits: response.body.platformFee?.amount ?? '0',
+        grossToAmountBaseUnits,
+        feeAmountBaseUnits,
         feeAmountSymbol: null,
         feeAmountDecimals: null,
         feeBps: 0,
@@ -260,6 +267,23 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
     }
 
     return feeConfig.feeAccount;
+  }
+
+  private resolveGrossToAmountBaseUnits(
+    netToAmountBaseUnits: string,
+    feeAmountBaseUnits: string,
+    feeConfig: IQuoteRequest['feeConfig'],
+  ): string {
+    if (
+      feeConfig.kind !== 'jupiter' ||
+      feeConfig.mode !== 'enforced' ||
+      feeConfig.feeAssetSide !== 'buy' ||
+      feeAmountBaseUnits === '0'
+    ) {
+      return netToAmountBaseUnits;
+    }
+
+    return (BigInt(netToAmountBaseUnits) + BigInt(feeAmountBaseUnits)).toString();
   }
 
   private observeRequest(

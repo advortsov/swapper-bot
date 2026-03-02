@@ -56,6 +56,48 @@ describe('JupiterAggregator', () => {
     expect(requestedUrl).toContain('inputMint=So11111111111111111111111111111111111111112');
   });
 
+  it('должен возвращать gross и platform fee из ответа Jupiter', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        outAmount: '8328035',
+        platformFee: {
+          amount: '16689',
+        },
+      }),
+    });
+    const aggregator = createAggregator(fetchMock);
+
+    const quote = await aggregator.getQuote({
+      chain: 'solana',
+      sellTokenAddress: 'So11111111111111111111111111111111111111112',
+      buyTokenAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+      sellAmountBaseUnits: '100000000',
+      sellTokenDecimals: 9,
+      buyTokenDecimals: 6,
+      feeConfig: {
+        kind: 'jupiter',
+        aggregatorName: 'jupiter',
+        chain: 'solana',
+        mode: 'enforced',
+        feeType: 'native fee',
+        feeBps: 20,
+        feeAssetSide: 'buy',
+        feeAssetAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+        feeAssetSymbol: 'USDC',
+        feeAppliedAtQuote: true,
+        feeEnforcedOnExecution: true,
+        feeAccount: 'fee-account',
+        feeMintAddress: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+      },
+    });
+
+    expect(quote.toAmountBaseUnits).toBe('8328035');
+    expect(quote.feeAmountBaseUnits).toBe('16689');
+    expect(quote.grossToAmountBaseUnits).toBe('8344724');
+  });
+
   it('должен явно отклонять swap-транзакции для Solana до отдельной интеграции', async () => {
     const fetchMock = vi
       .fn()

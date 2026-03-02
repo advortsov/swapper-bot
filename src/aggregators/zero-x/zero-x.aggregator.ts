@@ -30,6 +30,11 @@ interface IZeroXQuoteResponse {
   buyAmount: string;
   liquidityAvailable: boolean;
   totalNetworkFee: string | null;
+  fees?: {
+    integratorFee?: {
+      amount: string;
+    } | null;
+  };
   transaction?: IZeroXSwapTransaction;
 }
 
@@ -107,11 +112,18 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('Недостаточно ликвидности для указанной пары');
       }
 
+      const feeAmountBaseUnits = response.body.fees?.integratorFee?.amount ?? '0';
+      const grossToAmountBaseUnits = this.resolveGrossToAmountBaseUnits(
+        response.body.buyAmount,
+        feeAmountBaseUnits,
+        params.feeConfig,
+      );
+
       return {
         aggregatorName: this.name,
         toAmountBaseUnits: response.body.buyAmount,
-        grossToAmountBaseUnits: response.body.buyAmount,
-        feeAmountBaseUnits: '0',
+        grossToAmountBaseUnits,
+        feeAmountBaseUnits,
         feeAmountSymbol: null,
         feeAmountDecimals: null,
         feeBps: 0,
@@ -219,6 +231,23 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
     url.searchParams.set('swapFeeRecipient', feeConfig.feeRecipient);
     url.searchParams.set('swapFeeBps', `${feeConfig.feeBps}`);
     url.searchParams.set('swapFeeToken', feeConfig.feeTokenAddress);
+  }
+
+  private resolveGrossToAmountBaseUnits(
+    netToAmountBaseUnits: string,
+    feeAmountBaseUnits: string,
+    feeConfig: IQuoteRequest['feeConfig'],
+  ): string {
+    if (
+      feeConfig.kind !== 'zerox' ||
+      feeConfig.mode !== 'enforced' ||
+      feeConfig.feeAssetSide !== 'buy' ||
+      feeAmountBaseUnits === '0'
+    ) {
+      return netToAmountBaseUnits;
+    }
+
+    return (BigInt(netToAmountBaseUnits) + BigInt(feeAmountBaseUnits)).toString();
   }
 
   private toSlippageBps(slippagePercentage: number): string {
