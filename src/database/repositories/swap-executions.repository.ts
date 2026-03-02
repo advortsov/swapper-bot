@@ -87,6 +87,7 @@ export class SwapExecutionsRepository {
       .updateTable('swap_executions')
       .set({
         provider_reference: providerReference,
+        status: 'session_created',
       })
       .where('id', '=', executionId)
       .execute();

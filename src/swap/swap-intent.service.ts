@@ -146,7 +146,7 @@ export class SwapIntentService {
   }): Promise<string> {
     return this.swapExecutionAuditService.createExecution({
       ...payload,
-      status: 'session_created',
+      status: 'initiated',
     });
   }
 
