@@ -12,6 +12,6 @@ import { SwapModule } from '../swap/swap.module';
   imports: [AggregatorsModule, ChainsModule, forwardRef(() => SwapModule)],
   controllers: [WalletConnectController],
   providers: [WalletConnectSessionStore, WalletConnectPhantomService, WalletConnectService],
-  exports: [WalletConnectService],
+  exports: [WalletConnectService, WalletConnectSessionStore],
 })
 export class WalletConnectModule {}

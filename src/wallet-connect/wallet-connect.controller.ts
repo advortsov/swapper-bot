@@ -48,6 +48,17 @@ export class WalletConnectController {
   ): Promise<void> {
     try {
       const deeplink = await this.walletConnectService.handlePhantomConnectCallback(query);
+
+      if (!deeplink) {
+        this.sendPage(response, {
+          title: 'Кошелёк подключён',
+          heading: 'Кошелёк подключён',
+          text: 'Соединение сохранено. Можно вернуться в Telegram и выполнять команды.',
+          autoRedirect: false,
+        });
+        return;
+      }
+
       this.sendPage(response, {
         title: 'Продолжить в Phantom',
         heading: 'Кошелёк подключён',

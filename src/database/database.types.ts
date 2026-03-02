@@ -80,6 +80,32 @@ export interface ISwapExecutionsTable {
   executed_at: Date | null;
 }
 
+export interface IFavoritePairsTable {
+  id: Generated<string>;
+  user_id: string;
+  chain: string;
+  amount: string;
+  from_token_chain: string;
+  from_token_address: string;
+  to_token_chain: string;
+  to_token_address: string;
+  created_at: Generated<Date>;
+}
+
+export interface IPriceAlertsTable {
+  id: Generated<string>;
+  favorite_id: string;
+  user_id: string;
+  target_to_amount: string;
+  status: string;
+  created_at: Generated<Date>;
+  updated_at: Generated<Date>;
+  last_checked_at: Date | null;
+  triggered_at: Date | null;
+  last_observed_net_to_amount: string | null;
+  last_observed_aggregator: string | null;
+}
+
 export interface IDatabase {
   users: IUsersTable;
   tokens: ITokensTable;
@@ -87,4 +113,6 @@ export interface IDatabase {
   swap_intents: ISwapIntentsTable;
   swap_intent_options: ISwapIntentOptionsTable;
   swap_executions: ISwapExecutionsTable;
+  favorite_pairs: IFavoritePairsTable;
+  price_alerts: IPriceAlertsTable;
 }

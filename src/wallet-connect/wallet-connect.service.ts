@@ -5,22 +5,35 @@ import type { SessionTypes } from '@walletconnect/types';
 import { randomUUID } from 'node:crypto';
 
 import type {
+  ICreateWalletConnectConnectionInput,
   ICreateWalletConnectSessionInput,
   IPhantomCallbackQuery,
+  IWalletConnectionSession,
+  IWalletConnectionStatus,
   IWalletConnectSession,
   IWalletConnectSessionPublic,
 } from './interfaces/wallet-connect.interface';
+import { DEFAULT_APP_PUBLIC_URL, MIN_SWAP_TIMEOUT_SECONDS } from './wallet-connect.constants';
 import {
-  CHAIN_CONFIG_BY_CHAIN,
-  DEFAULT_APP_PUBLIC_URL,
-  MIN_SWAP_TIMEOUT_SECONDS,
-  TELEGRAM_API_BASE_URL,
-  type IWalletConnectChainConfig,
-  WALLETCONNECT_ICON_URL,
-} from './wallet-connect.constants';
+  buildSwapTransactionForPayload,
+  buildWalletExplorerUrl,
+  createWalletConnectMetadata,
+  escapeWalletConnectHtml,
+  executeWalletSwapOverConnection,
+  extractWalletAddress,
+  getWalletConnectChainConfig,
+  getWalletConnectSwapPayload,
+  getWalletConnectionFamily,
+  getWalletConnectErrorWithLog,
+  requestWalletConnectExecution,
+  registerWalletConnectClientEvents,
+  resolveWalletConnectAggregator,
+  saveWalletConnection,
+  sendWalletConnectTelegramMessage,
+  waitForWalletConnectApproval,
+} from './wallet-connect.evm.helpers';
 import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
 import { WalletConnectSessionStore } from './wallet-connect.session-store';
-import { getWalletConnectErrorMessage, escapeHtml } from './wallet-connect.utils';
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
 import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
 import type { ChainType } from '../chains/interfaces/chain.interface';
@@ -28,7 +41,10 @@ import { BusinessException } from '../common/exceptions/business.exception';
 import { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
 
 const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
-const TELEGRAM_PREVIEW_DISABLED = true;
+const WALLETCONNECT_DISCONNECT_REASON = {
+  code: 6000,
+  message: 'Disconnected by user',
+};
 
 @Injectable()
 export class WalletConnectService implements OnModuleInit {
@@ -63,21 +79,129 @@ export class WalletConnectService implements OnModuleInit {
 
     this.signClient = await SignClient.init({
       projectId: this.projectId,
-      metadata: this.getClientMetadata(),
+      metadata: createWalletConnectMetadata(this.appPublicUrl),
     });
-    this.registerClientEvents(this.signClient);
+    registerWalletConnectClientEvents(this.signClient, this.logger);
+  }
+
+  public getConnectionStatus(userId: string): IWalletConnectionStatus {
+    return this.sessionStore.listConnections(userId);
+  }
+
+  public async connect(
+    input: ICreateWalletConnectConnectionInput,
+  ): Promise<IWalletConnectSessionPublic> {
+    if (input.chain === 'solana') {
+      return this.phantomService.createConnectionSession(input);
+    }
+
+    const cached = this.getReusableSession(input.userId, input.chain);
+
+    if (cached) {
+      return {
+        sessionId: randomUUID(),
+        uri: null,
+        expiresAt: new Date(cached.expiresAt).toISOString(),
+        walletDelivery: 'connected-wallet',
+      };
+    }
+
+    return this.createEvmConnectSession(input);
+  }
+
+  public async disconnect(userId: string, chainOrAll: ChainType | 'all'): Promise<void> {
+    const families =
+      chainOrAll === 'all'
+        ? (['evm', 'solana'] as const)
+        : ([getWalletConnectionFamily(chainOrAll)] as const);
+
+    for (const family of families) {
+      const connection = this.sessionStore.getConnection(userId, family);
+
+      if (!connection) {
+        continue;
+      }
+
+      if (family === 'evm' && connection.topic) {
+        try {
+          const signClient = await this.getSignClient();
+          await signClient.disconnect({
+            topic: connection.topic,
+            reason: WALLETCONNECT_DISCONNECT_REASON,
+          });
+        } catch (error: unknown) {
+          this.logger.warn(`WalletConnect disconnect failed: ${this.getErrorMessage(error)}`);
+        }
+      }
+
+      this.sessionStore.deleteConnection(userId, family);
+    }
   }
 
   public async createSession(
     input: ICreateWalletConnectSessionInput,
   ): Promise<IWalletConnectSessionPublic> {
     if (input.swapPayload.chain === 'solana') {
+      const cached = this.getReusableSession(input.userId, 'solana');
+
+      if (cached?.phantom) {
+        return this.phantomService.createSwapSessionFromConnection(input, cached);
+      }
+
       return this.phantomService.createSession(input);
     }
 
+    const cached = this.getReusableSession(input.userId, input.swapPayload.chain);
+
+    if (cached?.topic) {
+      const syntheticSessionId = randomUUID();
+      void executeWalletSwapOverConnection({
+        connection: cached,
+        swapPayload: input.swapPayload,
+        aggregators: this.aggregators,
+        configService: this.configService,
+        requestExecution: this.requestWalletExecution.bind(this),
+        swapExecutionAuditService: this.swapExecutionAuditService,
+        telegramBotToken: this.telegramBotToken,
+        logger: this.logger,
+      });
+
+      return {
+        sessionId: syntheticSessionId,
+        uri: null,
+        expiresAt: new Date(cached.expiresAt).toISOString(),
+        walletDelivery: 'connected-wallet',
+      };
+    }
+
+    return this.createEvmSwapSession(input);
+  }
+
+  public getPhantomConnectUrl(sessionId: string): string {
+    return this.phantomService.getPhantomConnectUrl(sessionId);
+  }
+
+  public async handlePhantomConnectCallback(query: IPhantomCallbackQuery): Promise<string | null> {
+    return this.phantomService.handleConnectCallback(query);
+  }
+
+  public async handlePhantomSignCallback(
+    query: IPhantomCallbackQuery,
+  ): Promise<{ explorerUrl: string; transactionHash: string }> {
+    return this.phantomService.handleSignCallback(query);
+  }
+
+  public getReusableSession(userId: string, chain: ChainType): IWalletConnectionSession | null {
+    const family = getWalletConnectionFamily(chain);
+    return this.sessionStore.touchConnection(userId, family);
+  }
+
+  private async createEvmConnectSession(
+    input: ICreateWalletConnectConnectionInput,
+  ): Promise<IWalletConnectSessionPublic> {
     this.ensureWalletConnectConfigured();
     const signClient = await this.getSignClient();
-    const chainConfig = this.getChainConfig(input.swapPayload.chain);
+    const chainConfig = getWalletConnectChainConfig(input.chain);
     const { uri, approval } = await signClient.connect({
       requiredNamespaces: {
         [chainConfig.namespace]: {
@@ -99,9 +223,9 @@ export class WalletConnectService implements OnModuleInit {
       userId: input.userId,
       uri,
       expiresAt,
-      swapPayload: {
-        ...input.swapPayload,
-      },
+      kind: 'connect',
+      family: 'evm',
+      chain: input.chain,
     };
 
     this.sessionStore.save(session);
@@ -109,48 +233,56 @@ export class WalletConnectService implements OnModuleInit {
     void this.handleSessionLifecycle(sessionId);
 
     return {
-      sessionId: session.sessionId,
-      uri: session.uri,
-      expiresAt: new Date(session.expiresAt).toISOString(),
+      sessionId,
+      uri,
+      expiresAt: new Date(expiresAt).toISOString(),
+      walletDelivery: 'qr',
     };
   }
 
-  public getPhantomConnectUrl(sessionId: string): string {
-    return this.phantomService.getPhantomConnectUrl(sessionId);
-  }
+  private async createEvmSwapSession(
+    input: ICreateWalletConnectSessionInput,
+  ): Promise<IWalletConnectSessionPublic> {
+    this.ensureWalletConnectConfigured();
+    const signClient = await this.getSignClient();
+    const chainConfig = getWalletConnectChainConfig(input.swapPayload.chain);
+    const { uri, approval } = await signClient.connect({
+      requiredNamespaces: {
+        [chainConfig.namespace]: {
+          methods: [...chainConfig.methods],
+          chains: [chainConfig.chainId],
+          events: [...chainConfig.events],
+        },
+      },
+    });
 
-  public async handlePhantomConnectCallback(query: IPhantomCallbackQuery): Promise<string> {
-    return this.phantomService.handleConnectCallback(query);
-  }
-
-  public async handlePhantomSignCallback(
-    query: IPhantomCallbackQuery,
-  ): Promise<{ explorerUrl: string; transactionHash: string }> {
-    return this.phantomService.handleSignCallback(query);
-  }
-
-  public async buildSwapTransaction(
-    sessionId: string,
-    walletAddress: string,
-  ): Promise<ISwapTransaction> {
-    const session = this.sessionStore.get(sessionId);
-
-    if (!session) {
-      throw new BusinessException('WalletConnect session is not found or expired');
+    if (!uri) {
+      throw new BusinessException('Failed to create WalletConnect URI');
     }
 
-    if (session.swapPayload.chain === 'solana') {
-      return this.phantomService.buildSwapTransaction(sessionId, walletAddress);
-    }
+    const sessionId = randomUUID();
+    const expiresAt = Date.now() + this.swapTimeoutSeconds * 1_000;
+    const session: IWalletConnectSession = {
+      sessionId,
+      userId: input.userId,
+      uri,
+      expiresAt,
+      kind: 'swap',
+      family: 'evm',
+      chain: input.swapPayload.chain,
+      swapPayload: { ...input.swapPayload },
+    };
 
-    const aggregator = this.resolveAggregator(session.swapPayload.aggregatorName);
-    await this.waitForApproval(sessionId, session.expiresAt);
-    const transaction = await this.buildTransactionForSession(session, aggregator, walletAddress);
+    this.sessionStore.save(session);
+    this.approvals.set(sessionId, approval);
+    void this.handleSessionLifecycle(sessionId);
 
-    this.sessionStore.delete(sessionId);
-    this.approvals.delete(sessionId);
-
-    return transaction;
+    return {
+      sessionId,
+      uri,
+      expiresAt: new Date(expiresAt).toISOString(),
+      walletDelivery: 'qr',
+    };
   }
 
   private ensureWalletConnectConfigured(): void {
@@ -173,49 +305,11 @@ export class WalletConnectService implements OnModuleInit {
   private async getSignClient(): Promise<SignClient> {
     this.signClient ??= await SignClient.init({
       projectId: this.projectId,
-      metadata: this.getClientMetadata(),
+      metadata: createWalletConnectMetadata(this.appPublicUrl),
     });
-    this.registerClientEvents(this.signClient);
+    registerWalletConnectClientEvents(this.signClient, this.logger);
 
     return this.signClient;
-  }
-
-  private getClientMetadata(): {
-    name: string;
-    description: string;
-    url: string;
-    icons: string[];
-    redirect: { universal: string };
-  } {
-    return {
-      name: 'swapper-bot',
-      description: 'DEX Aggregator Telegram Bot',
-      url: this.appPublicUrl,
-      icons: [WALLETCONNECT_ICON_URL],
-      redirect: {
-        universal: this.appPublicUrl,
-      },
-    };
-  }
-
-  private async waitForApproval(
-    sessionId: string,
-    expiresAt: number,
-  ): Promise<SessionTypes.Struct> {
-    const approvalCallback = this.approvals.get(sessionId);
-
-    if (!approvalCallback) {
-      throw new BusinessException('WalletConnect approval promise is not available');
-    }
-
-    const timeout = Math.max(expiresAt - Date.now(), 1);
-    const timeoutPromise = new Promise<never>((_resolve, reject) => {
-      setTimeout(() => {
-        reject(new BusinessException('WalletConnect approval timed out'));
-      }, timeout);
-    });
-
-    return Promise.race([approvalCallback(), timeoutPromise]);
   }
 
   private async handleSessionLifecycle(sessionId: string): Promise<void> {
@@ -226,250 +320,151 @@ export class WalletConnectService implements OnModuleInit {
     }
 
     try {
-      const approvedSession = await this.waitForApproval(sessionId, session.expiresAt);
-      const walletAddress = this.extractWalletAddress(approvedSession, session.swapPayload.chain);
-      const aggregator = this.resolveAggregator(session.swapPayload.aggregatorName);
-      const transaction = await this.buildTransactionForSession(session, aggregator, walletAddress);
-      const transactionHash = await this.requestWalletExecution(
-        approvedSession,
-        session.swapPayload.chain,
-        walletAddress,
-        transaction,
-      );
-      const explorerUrl = this.buildExplorerUrl(session.swapPayload.chain, transactionHash);
+      const approvalCallback = this.approvals.get(sessionId);
 
-      await this.sendTelegramMessage(
-        session.userId,
-        [
-          'Своп отправлен.',
-          `Сеть: ${session.swapPayload.chain}`,
-          `Агрегатор: ${session.swapPayload.aggregatorName}`,
-          `Tx: <code>${this.escapeHtml(transactionHash)}</code>`,
-          `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
-        ].join('\n'),
+      if (!approvalCallback) {
+        throw new BusinessException('WalletConnect approval promise is not available');
+      }
+
+      const approvedSession = await waitForWalletConnectApproval(
+        approvalCallback,
+        session.expiresAt,
       );
-      await this.swapExecutionAuditService.markSuccess(
-        session.swapPayload.executionId,
-        session.swapPayload.aggregatorName,
-        session.swapPayload.feeMode,
-        transactionHash,
-      );
+      await this.processApprovedSession(session, approvedSession);
     } catch (error: unknown) {
       const message = this.getErrorMessage(error);
-      this.logger.error(`WalletConnect swap failed: ${message}`);
-      await this.swapExecutionAuditService.markError(
-        session.swapPayload.executionId,
-        session.swapPayload.aggregatorName,
-        session.swapPayload.feeMode,
-        message,
-      );
-      await this.sendTelegramMessage(session.userId, `Ошибка свопа: ${this.escapeHtml(message)}`);
+      this.logger.error(`WalletConnect flow failed: ${message}`);
+      await this.handleSessionError(session, message);
     } finally {
       this.sessionStore.delete(sessionId);
       this.approvals.delete(sessionId);
     }
   }
 
-  private registerClientEvents(signClient: SignClient): void {
-    if (signClient.events.listenerCount('session_connect') === 0) {
-      signClient.on('session_connect', ({ session }) => {
-        this.logger.log(`WalletConnect session connected: ${session.topic}`);
-      });
-    }
-
-    if (signClient.events.listenerCount('session_expire') === 0) {
-      signClient.on('session_expire', ({ topic }) => {
-        this.logger.warn(`WalletConnect session expired: ${topic}`);
-      });
-    }
-
-    if (signClient.events.listenerCount('session_delete') === 0) {
-      signClient.on('session_delete', ({ topic }) => {
-        this.logger.warn(`WalletConnect session deleted: ${topic}`);
-      });
-    }
-  }
-
-  private getChainConfig(chain: ChainType): IWalletConnectChainConfig {
-    return CHAIN_CONFIG_BY_CHAIN[chain];
-  }
-
-  private resolveAggregator(aggregatorName: string): IAggregator {
-    const aggregator = this.aggregators.find(
-      (candidateAggregator) => candidateAggregator.name === aggregatorName,
+  private async processApprovedSession(
+    session: IWalletConnectSession,
+    approvedSession: SessionTypes.Struct,
+  ): Promise<void> {
+    const walletAddress = extractWalletAddress(approvedSession, session.chain);
+    this.sessionStore.saveConnection(
+      saveWalletConnection({
+        session,
+        approvedSession,
+        walletAddress,
+      }),
     );
 
-    if (!aggregator) {
-      throw new BusinessException(`Aggregator ${aggregatorName} is not available for swap`);
+    if (session.kind === 'connect') {
+      await this.notifyConnectedWallet(session, walletAddress);
+      return;
     }
 
-    return aggregator;
+    await this.executeApprovedSwap(session, approvedSession, walletAddress);
   }
 
-  private buildTransactionForSession(
+  private async notifyConnectedWallet(
     session: IWalletConnectSession,
-    aggregator: IAggregator,
     walletAddress: string,
-  ): Promise<ISwapTransaction> {
-    return aggregator.buildSwapTransaction({
-      chain: session.swapPayload.chain,
-      sellTokenAddress: session.swapPayload.sellTokenAddress,
-      buyTokenAddress: session.swapPayload.buyTokenAddress,
-      sellAmountBaseUnits: session.swapPayload.sellAmountBaseUnits,
-      sellTokenDecimals: session.swapPayload.sellTokenDecimals,
-      buyTokenDecimals: session.swapPayload.buyTokenDecimals,
-      fromAddress: walletAddress,
-      slippagePercentage: session.swapPayload.slippagePercentage,
-      feeConfig: session.swapPayload.executionFee,
+  ): Promise<void> {
+    await sendWalletConnectTelegramMessage({
+      telegramBotToken: this.telegramBotToken,
+      chatId: session.userId,
+      text: [
+        'Кошелёк подключён.',
+        `Семейство: ${session.family === 'evm' ? 'EVM' : 'Solana'}`,
+        `Адрес: <code>${escapeWalletConnectHtml(walletAddress)}</code>`,
+      ].join('\n'),
+      logger: this.logger,
     });
   }
 
-  private extractWalletAddress(session: SessionTypes.Struct, chain: ChainType): string {
-    const chainConfig = this.getChainConfig(chain);
-    const accounts = session.namespaces[chainConfig.namespace]?.accounts ?? [];
-    const account = accounts[0];
+  private async executeApprovedSwap(
+    session: IWalletConnectSession,
+    approvedSession: SessionTypes.Struct,
+    walletAddress: string,
+  ): Promise<void> {
+    const swapPayload = getWalletConnectSwapPayload(session);
+    const aggregator = resolveWalletConnectAggregator(this.aggregators, swapPayload.aggregatorName);
+    const transaction = await buildSwapTransactionForPayload(
+      swapPayload,
+      aggregator,
+      walletAddress,
+    );
+    const transactionHash = await this.requestWalletExecution(
+      approvedSession.topic,
+      swapPayload.chain,
+      walletAddress,
+      transaction,
+    );
+    const explorerUrl = buildWalletExplorerUrl(
+      this.configService,
+      swapPayload.chain,
+      transactionHash,
+    );
 
-    if (!account) {
-      throw new BusinessException(`WalletConnect session for ${chain} does not contain accounts`);
+    await sendWalletConnectTelegramMessage({
+      telegramBotToken: this.telegramBotToken,
+      chatId: session.userId,
+      text: [
+        'Своп отправлен.',
+        `Сеть: ${swapPayload.chain}`,
+        `Агрегатор: ${swapPayload.aggregatorName}`,
+        `Tx: <code>${escapeWalletConnectHtml(transactionHash)}</code>`,
+        `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
+      ].join('\n'),
+      logger: this.logger,
+    });
+    await this.swapExecutionAuditService.markSuccess(
+      swapPayload.executionId,
+      swapPayload.aggregatorName,
+      swapPayload.feeMode,
+      transactionHash,
+    );
+  }
+
+  private async handleSessionError(session: IWalletConnectSession, message: string): Promise<void> {
+    const swapPayload = session.swapPayload;
+
+    if (swapPayload) {
+      await this.swapExecutionAuditService.markError(
+        swapPayload.executionId,
+        swapPayload.aggregatorName,
+        swapPayload.feeMode,
+        message,
+      );
+      await sendWalletConnectTelegramMessage({
+        telegramBotToken: this.telegramBotToken,
+        chatId: session.userId,
+        text: `Ошибка свопа: ${escapeWalletConnectHtml(message)}`,
+        logger: this.logger,
+      });
+      return;
     }
 
-    const walletAddress = account.split(':').at(-1);
-
-    if (!walletAddress) {
-      throw new BusinessException(`WalletConnect account format is invalid for ${chain}`);
-    }
-
-    return walletAddress;
+    await sendWalletConnectTelegramMessage({
+      telegramBotToken: this.telegramBotToken,
+      chatId: session.userId,
+      text: `Ошибка подключения кошелька: ${escapeWalletConnectHtml(message)}`,
+      logger: this.logger,
+    });
   }
 
   private async requestWalletExecution(
-    session: SessionTypes.Struct,
+    topic: string,
     chain: ChainType,
     walletAddress: string,
     transaction: ISwapTransaction,
   ): Promise<string> {
-    const signClient = await this.getSignClient();
-    const chainConfig = this.getChainConfig(chain);
-
-    if (transaction.kind === 'solana') {
-      const serializedTransaction = transaction.serializedTransaction;
-
-      if (!serializedTransaction) {
-        throw new BusinessException('Solana transaction payload is missing');
-      }
-
-      const result = await signClient.request({
-        topic: session.topic,
-        chainId: chainConfig.chainId,
-        request: {
-          method: 'solana_signAndSendTransaction',
-          params: {
-            transaction: serializedTransaction,
-          },
-        },
-      });
-
-      return this.parseTransactionResult(result);
-    }
-
-    const result = await signClient.request({
-      topic: session.topic,
-      chainId: chainConfig.chainId,
-      request: {
-        method: 'eth_sendTransaction',
-        params: [
-          {
-            from: walletAddress,
-            to: transaction.to,
-            data: transaction.data,
-            value: transaction.value,
-          },
-        ],
-      },
+    return requestWalletConnectExecution({
+      signClient: await this.getSignClient(),
+      topic,
+      chain,
+      walletAddress,
+      transaction,
     });
-
-    return this.parseTransactionResult(result);
-  }
-
-  private parseTransactionResult(result: unknown): string {
-    if (typeof result === 'string' && result.trim() !== '') {
-      return result;
-    }
-
-    if (typeof result === 'object' && result !== null) {
-      const candidate = result as Record<string, unknown>;
-
-      if (typeof candidate['signature'] === 'string' && candidate['signature'].trim() !== '') {
-        return candidate['signature'];
-      }
-
-      if (typeof candidate['txHash'] === 'string' && candidate['txHash'].trim() !== '') {
-        return candidate['txHash'];
-      }
-    }
-
-    throw new BusinessException('WalletConnect transaction result is invalid');
-  }
-
-  private buildExplorerUrl(chain: ChainType, transactionHash: string): string {
-    const explorerUrlByChain: Readonly<Record<ChainType, string>> = {
-      ethereum:
-        this.configService.get<string>('EXPLORER_URL_ETHEREUM') ?? 'https://etherscan.io/tx/',
-      arbitrum:
-        this.configService.get<string>('EXPLORER_URL_ARBITRUM') ?? 'https://arbiscan.io/tx/',
-      base: this.configService.get<string>('EXPLORER_URL_BASE') ?? 'https://basescan.org/tx/',
-      optimism:
-        this.configService.get<string>('EXPLORER_URL_OPTIMISM') ??
-        'https://optimistic.etherscan.io/tx/',
-      solana: this.configService.get<string>('EXPLORER_URL_SOLANA') ?? 'https://solscan.io/tx/',
-    };
-
-    const baseUrl = explorerUrlByChain[chain];
-
-    if (baseUrl.trim() === '') {
-      throw new BusinessException(`Explorer URL for chain ${chain} is not configured`);
-    }
-
-    return `${baseUrl}${transactionHash}`;
   }
 
   private getErrorMessage(error: unknown): string {
-    const errorObj =
-      typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : null;
-    if (errorObj) {
-      this.logger.error(`Full error object: ${JSON.stringify(errorObj)}`);
-    }
-    return getWalletConnectErrorMessage(error);
-  }
-
-  private async sendTelegramMessage(chatId: string, text: string): Promise<void> {
-    if (this.telegramBotToken.trim() === '') {
-      return;
-    }
-
-    const response = await fetch(
-      `${TELEGRAM_API_BASE_URL}/bot${this.telegramBotToken}/sendMessage`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: TELEGRAM_PREVIEW_DISABLED,
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      const body = await response.text();
-      this.logger.warn(`Telegram sendMessage failed: ${response.status} ${body}`);
-    }
-  }
-
-  private escapeHtml(value: string): string {
-    return escapeHtml(value);
+    return getWalletConnectErrorWithLog(error, this.logger);
   }
 }

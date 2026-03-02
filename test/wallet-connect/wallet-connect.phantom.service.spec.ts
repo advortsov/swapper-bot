@@ -63,7 +63,7 @@ describe('WalletConnectPhantomService', () => {
       }),
       healthCheck: vi.fn(),
     };
-    const sessionStore = new WalletConnectSessionStore();
+    const sessionStore = new WalletConnectSessionStore(configService as ConfigService);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       text: async () => '',
@@ -114,7 +114,8 @@ describe('WalletConnectPhantomService', () => {
       },
     });
 
-    const sessionUrl = new URL(session.uri);
+    expect(session.uri).not.toBeNull();
+    const sessionUrl = new URL(session.uri ?? '');
 
     expect(sessionUrl.origin).toBe('https://phantom.app');
     expect(sessionUrl.pathname).toBe('/ul/v1/connect');
@@ -164,7 +165,8 @@ describe('WalletConnectPhantomService', () => {
         fromAddress: 'wallet-public-key',
       }),
     );
-    expect(signUrl).toContain('https://phantom.app/ul/v1/signTransaction');
+    expect(signUrl).not.toBeNull();
+    expect(signUrl ?? '').toContain('https://phantom.app/ul/v1/signTransaction');
 
     const signPayload = encryptPayload(
       {

@@ -9,10 +9,18 @@ import { AggregatorsModule } from '../aggregators/aggregators.module';
 import { ChainsModule } from '../chains/chains.module';
 import { FeesModule } from '../fees/fees.module';
 import { SettingsModule } from '../settings/settings.module';
+import { TokenResolutionModule } from '../token-resolution/token-resolution.module';
 import { TokensModule } from '../tokens/tokens.module';
 
 @Module({
-  imports: [TokensModule, ChainsModule, AggregatorsModule, FeesModule, SettingsModule],
+  imports: [
+    TokensModule,
+    ChainsModule,
+    AggregatorsModule,
+    FeesModule,
+    SettingsModule,
+    TokenResolutionModule,
+  ],
   providers: [PriceCache, PriceRepository, PriceQuoteService, PriceRuntimeService, PriceService],
   exports: [PriceService, PriceQuoteService],
 })

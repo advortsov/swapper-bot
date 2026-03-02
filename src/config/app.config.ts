@@ -12,6 +12,11 @@ const CACHE_TTL_DEFAULT = '30';
 const SWAP_TIMEOUT_SECONDS_DEFAULT = '300';
 const SWAP_SLIPPAGE_DEFAULT = '0.5';
 const APP_PUBLIC_URL_DEFAULT = 'https://example.org';
+const WALLET_CONNECT_SESSION_TTL_DEFAULT = '604800';
+const TELEGRAM_PENDING_ACTION_TTL_DEFAULT = '300';
+const PRICE_ALERTS_POLL_INTERVAL_DEFAULT = '60';
+const MAX_ACTIVE_PRICE_ALERTS_DEFAULT = '20';
+const COINGECKO_API_BASE_URL_DEFAULT = 'https://api.coingecko.com/api/v3';
 
 function getEnvValue(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
@@ -30,6 +35,23 @@ export const appConfig = registerAs(APP_CONFIG_NAMESPACE, () => {
     getEnvValue('SWAP_TIMEOUT_SECONDS', SWAP_TIMEOUT_SECONDS_DEFAULT),
     10,
   );
+  const walletConnectSessionTtlSeconds = Number.parseInt(
+    getEnvValue('WALLET_CONNECT_SESSION_TTL_SEC', WALLET_CONNECT_SESSION_TTL_DEFAULT),
+    10,
+  );
+  const telegramPendingActionTtlSeconds = Number.parseInt(
+    getEnvValue('TELEGRAM_PENDING_ACTION_TTL_SEC', TELEGRAM_PENDING_ACTION_TTL_DEFAULT),
+    10,
+  );
+  const priceAlertsPollIntervalSeconds = Number.parseInt(
+    getEnvValue('PRICE_ALERTS_POLL_INTERVAL_SEC', PRICE_ALERTS_POLL_INTERVAL_DEFAULT),
+    10,
+  );
+  const maxActivePriceAlertsPerUser = Number.parseInt(
+    getEnvValue('MAX_ACTIVE_PRICE_ALERTS_PER_USER', MAX_ACTIVE_PRICE_ALERTS_DEFAULT),
+    10,
+  );
+  const coinGeckoApiBaseUrl = getEnvValue('COINGECKO_API_BASE_URL', COINGECKO_API_BASE_URL_DEFAULT);
   const swapSlippage = Number.parseFloat(getEnvValue('SWAP_SLIPPAGE', SWAP_SLIPPAGE_DEFAULT));
 
   return {
@@ -43,6 +65,11 @@ export const appConfig = registerAs(APP_CONFIG_NAMESPACE, () => {
     walletConnectProjectId,
     appPublicUrl,
     swapTimeoutSeconds,
+    walletConnectSessionTtlSeconds,
+    telegramPendingActionTtlSeconds,
+    priceAlertsPollIntervalSeconds,
+    maxActivePriceAlertsPerUser,
+    coinGeckoApiBaseUrl,
     swapSlippage,
   };
 });

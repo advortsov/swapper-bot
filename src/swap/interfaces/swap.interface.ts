@@ -6,9 +6,10 @@ export interface ISwapRequest {
   chain: ChainType;
   userId: string;
   amount: string;
-  fromSymbol: string;
-  toSymbol: string;
+  fromTokenInput: string;
+  toTokenInput: string;
   rawCommand: string;
+  explicitChain: boolean;
 }
 
 export interface ISwapQuotesResponse {
@@ -17,6 +18,8 @@ export interface ISwapQuotesResponse {
   aggregator: string;
   fromSymbol: string;
   toSymbol: string;
+  fromTokenAddress: string;
+  toTokenAddress: string;
   fromAmount: string;
   toAmount: string;
   grossToAmount: string;
@@ -46,8 +49,9 @@ export interface ISwapSessionResponse {
   feeMode: FeeMode;
   feeType: FeeType;
   feeDisplayLabel: string;
-  walletConnectUri: string;
+  walletConnectUri: string | null;
   sessionId: string;
   expiresAt: string;
   quoteExpiresAt: string;
+  walletDelivery: 'qr' | 'app-link' | 'connected-wallet';
 }

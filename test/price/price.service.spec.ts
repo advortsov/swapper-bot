@@ -69,6 +69,8 @@ const response: IPriceResponse = {
   aggregator: 'paraswap',
   fromSymbol: 'ETH',
   toSymbol: 'USDC',
+  fromTokenAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+  toTokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
   fromAmount: '10',
   toAmount: '1',
   grossToAmount: '1',
@@ -117,10 +119,11 @@ describe('PriceService', () => {
     const result = await service.getBestQuote({
       userId: '42',
       amount: '10',
-      fromSymbol: 'ETH',
-      toSymbol: 'USDC',
+      fromTokenInput: 'ETH',
+      toTokenInput: 'USDC',
       chain: 'ethereum',
       rawCommand: '/price 10 ETH to USDC',
+      explicitChain: false,
     });
 
     expect(result).toBe(response);

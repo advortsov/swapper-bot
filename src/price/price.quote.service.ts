@@ -7,7 +7,7 @@ import { CHAINS_TOKEN, type IChainsCollection } from '../chains/chains.constants
 import type { ChainType, IChain } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { QuoteMonetizationService } from '../fees/quote-monetization.service';
-import { TokensService } from '../tokens/tokens.service';
+import { TokenAddressResolverService } from '../token-resolution/token-address-resolver.service';
 import type { IPriceRequest, IPriceResponse } from './interfaces/price.interface';
 import type { ITokenRecord } from '../tokens/tokens.repository';
 
@@ -38,17 +38,25 @@ export class PriceQuoteService {
   public constructor(
     @Inject(AGGREGATORS_TOKEN)
     private readonly aggregators: readonly IAggregator[],
-    private readonly tokensService: TokensService,
     @Inject(CHAINS_TOKEN)
     private readonly chains: IChainsCollection,
     private readonly quoteMonetizationService: QuoteMonetizationService,
+    private readonly tokenAddressResolverService: TokenAddressResolverService,
   ) {}
 
   public async prepare(request: IPriceRequest): Promise<IPreparedPriceInput> {
     const normalizedAmount = this.normalizeAmount(request.amount);
     const chain = this.resolveChain(request.chain);
-    const fromToken = await this.tokensService.getTokenBySymbol(request.fromSymbol, request.chain);
-    const toToken = await this.tokensService.getTokenBySymbol(request.toSymbol, request.chain);
+    const fromToken = await this.tokenAddressResolverService.resolveTokenInput(
+      request.fromTokenInput,
+      request.chain,
+      request.explicitChain,
+    );
+    const toToken = await this.tokenAddressResolverService.resolveTokenInput(
+      request.toTokenInput,
+      request.chain,
+      request.explicitChain,
+    );
 
     this.ensureSupportedPair(chain, fromToken.address, toToken.address);
 
@@ -58,8 +66,8 @@ export class PriceQuoteService {
       cacheKey: this.buildCacheKey(
         request.chain,
         normalizedAmount,
-        fromToken.symbol,
-        toToken.symbol,
+        fromToken.address,
+        toToken.address,
       ),
       fromToken,
       toToken,
@@ -161,6 +169,8 @@ export class PriceQuoteService {
       aggregator: selection.bestQuote.aggregatorName,
       fromSymbol: input.fromToken.symbol,
       toSymbol: input.toToken.symbol,
+      fromTokenAddress: input.fromToken.address,
+      toTokenAddress: input.toToken.address,
       fromAmount: input.normalizedAmount,
       toAmount: formatUnits(BigInt(selection.bestQuote.toAmountBaseUnits), input.toToken.decimals),
       grossToAmount: formatUnits(

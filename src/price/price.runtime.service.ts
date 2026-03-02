@@ -66,8 +66,8 @@ export class PriceRuntimeService {
     await this.priceRepository.logRequest({
       userId: request.userId,
       command: request.rawCommand,
-      fromToken: request.fromSymbol.toUpperCase(),
-      toToken: request.toSymbol.toUpperCase(),
+      fromToken: request.fromTokenInput.toUpperCase(),
+      toToken: request.toTokenInput.toUpperCase(),
       amount: request.amount,
       result: null,
       error: true,

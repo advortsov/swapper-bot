@@ -6,6 +6,8 @@ import type {
   IExecutionFeeConfig,
 } from '../../fees/interfaces/fee-policy.interface';
 
+export type WalletConnectionFamily = 'evm' | 'solana';
+
 export interface IWalletConnectSwapPayload {
   intentId: string;
   executionId: string;
@@ -37,20 +39,56 @@ export interface ICreateWalletConnectSessionInput {
   swapPayload: IWalletConnectSwapPayload;
 }
 
+export interface ICreateWalletConnectConnectionInput {
+  userId: string;
+  chain: ChainType;
+}
+
 export interface IWalletConnectSession {
   sessionId: string;
   userId: string;
   uri: string;
   expiresAt: number;
+  kind: 'connect' | 'swap';
+  family: WalletConnectionFamily;
+  chain: ChainType;
   pairingTopic?: string;
-  swapPayload: IWalletConnectSwapPayload;
+  swapPayload?: IWalletConnectSwapPayload;
   phantom?: IPhantomSessionState;
 }
 
 export interface IWalletConnectSessionPublic {
   sessionId: string;
-  uri: string;
+  uri: string | null;
   expiresAt: string;
+  walletDelivery: 'qr' | 'app-link' | 'connected-wallet';
+}
+
+export interface IWalletConnectionSession {
+  userId: string;
+  family: WalletConnectionFamily;
+  chain: ChainType;
+  address: string;
+  topic?: string;
+  walletLabel: string | null;
+  connectedAt: number;
+  lastUsedAt: number;
+  expiresAt: number;
+  phantom?: IPhantomSessionState;
+}
+
+export interface IWalletConnectionStatus {
+  evm: IWalletConnectionSession | null;
+  solana: IWalletConnectionSession | null;
+}
+
+export interface IPendingTelegramAction {
+  token: string;
+  userId: string;
+  kind: 'favorite' | 'alert-threshold';
+  payload: Record<string, unknown>;
+  createdAt: number;
+  expiresAt: number;
 }
 
 export interface IPhantomSessionState {

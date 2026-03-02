@@ -58,6 +58,8 @@ const priceResponse = {
   aggregator: 'paraswap',
   fromSymbol: 'ETH',
   toSymbol: 'USDC',
+  fromTokenAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+  toTokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
   fromAmount: '10',
   toAmount: '20200',
   grossToAmount: '20200',
@@ -151,10 +153,11 @@ describe('SwapService', () => {
     const result = await service.getSwapQuotes({
       userId: '123',
       amount: '10',
-      fromSymbol: 'ETH',
-      toSymbol: 'USDC',
+      fromTokenInput: 'ETH',
+      toTokenInput: 'USDC',
       chain: 'ethereum',
       rawCommand: '/swap 10 ETH to USDC',
+      explicitChain: false,
     });
 
     expect(result.intentId).toBe('intent-id');
@@ -224,6 +227,7 @@ describe('SwapService', () => {
           sessionId: 'session-id',
           uri: 'wc:test',
           expiresAt: '2026-03-02T00:10:00.000Z',
+          walletDelivery: 'qr',
         };
       },
     };

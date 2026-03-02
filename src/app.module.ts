@@ -2,11 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { AggregatorsModule } from './aggregators/aggregators.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { ChainsModule } from './chains/chains.module';
 import { appConfig } from './config/app.config';
 import { validateEnvironment } from './config/env.validation';
 import { DatabaseModule } from './database/database.module';
+import { FavoritesModule } from './favorites/favorites.module';
 import { HealthModule } from './health/health.module';
+import { HistoryModule } from './history/history.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PriceModule } from './price/price.module';
 import { SwapModule } from './swap/swap.module';
@@ -37,6 +40,9 @@ const envFilePath = [
     AggregatorsModule,
     TokensModule,
     PriceModule,
+    FavoritesModule,
+    AlertsModule,
+    HistoryModule,
     WalletConnectModule,
     SwapModule,
     TelegramModule,

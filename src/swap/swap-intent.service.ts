@@ -78,8 +78,8 @@ export class SwapIntentService {
     const intentId = await this.swapIntentsRepository.createIntent({
       userId: request.userId,
       chain: request.chain,
-      fromSymbol: request.fromSymbol,
-      toSymbol: request.toSymbol,
+      fromSymbol: input.fromToken.symbol,
+      toSymbol: input.toToken.symbol,
       amount: request.amount,
       rawCommand: request.rawCommand,
       quoteSnapshot: quoteSnapshot as unknown as Record<string, unknown>,

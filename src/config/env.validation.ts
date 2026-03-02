@@ -9,6 +9,11 @@ const ENV_KEY_WC_PROJECT_ID = 'WC_PROJECT_ID';
 const ENV_KEY_APP_PUBLIC_URL = 'APP_PUBLIC_URL';
 const ENV_KEY_SWAP_SLIPPAGE = 'SWAP_SLIPPAGE';
 const ENV_KEY_SWAP_TIMEOUT_SECONDS = 'SWAP_TIMEOUT_SECONDS';
+const ENV_KEY_WALLET_CONNECT_SESSION_TTL_SEC = 'WALLET_CONNECT_SESSION_TTL_SEC';
+const ENV_KEY_TELEGRAM_PENDING_ACTION_TTL_SEC = 'TELEGRAM_PENDING_ACTION_TTL_SEC';
+const ENV_KEY_PRICE_ALERTS_POLL_INTERVAL_SEC = 'PRICE_ALERTS_POLL_INTERVAL_SEC';
+const ENV_KEY_MAX_ACTIVE_PRICE_ALERTS_PER_USER = 'MAX_ACTIVE_PRICE_ALERTS_PER_USER';
+const ENV_KEY_COINGECKO_API_BASE_URL = 'COINGECKO_API_BASE_URL';
 const ENV_KEY_ZEROX_FEE_BPS = 'ZEROX_FEE_BPS';
 const ENV_KEY_ZEROX_FEE_RECIPIENT = 'ZEROX_FEE_RECIPIENT';
 const ENV_KEY_ZEROX_FEE_TOKEN_MODE = 'ZEROX_FEE_TOKEN_MODE';
@@ -28,6 +33,9 @@ const MAX_PARASWAP_FEE_BPS = 200;
 const DEFAULT_CACHE_TTL_PRICE = 30;
 const DEFAULT_SWAP_TIMEOUT_SECONDS = 300;
 const DEFAULT_SWAP_SLIPPAGE = 0.5;
+const DEFAULT_WALLET_CONNECT_SESSION_TTL_SECONDS = 604800;
+const DEFAULT_TELEGRAM_PENDING_ACTION_TTL_SECONDS = 300;
+const DEFAULT_MAX_ACTIVE_PRICE_ALERTS_PER_USER = 20;
 const PARASWAP_SUPPORTED_API_VERSION = '6.2';
 const ALLOWED_ZEROX_FEE_TOKEN_MODES = ['auto', 'buy', 'sell'] as const;
 const ALLOWED_ODOS_MONETIZATION_MODES = ['disabled', 'tracking_only', 'enforced'] as const;
@@ -352,6 +360,31 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     DEFAULT_SWAP_TIMEOUT_SECONDS,
     MIN_SWAP_TIMEOUT_SECONDS,
   );
+  const walletConnectSessionTtl = getPositiveInteger(
+    source,
+    ENV_KEY_WALLET_CONNECT_SESSION_TTL_SEC,
+    DEFAULT_WALLET_CONNECT_SESSION_TTL_SECONDS,
+    MIN_SWAP_TIMEOUT_SECONDS,
+  );
+  const telegramPendingActionTtl = getPositiveInteger(
+    source,
+    ENV_KEY_TELEGRAM_PENDING_ACTION_TTL_SEC,
+    DEFAULT_TELEGRAM_PENDING_ACTION_TTL_SECONDS,
+    MIN_SWAP_TIMEOUT_SECONDS,
+  );
+  const priceAlertsPollInterval = getPositiveInteger(
+    source,
+    ENV_KEY_PRICE_ALERTS_POLL_INTERVAL_SEC,
+    60,
+    MIN_SWAP_TIMEOUT_SECONDS,
+  );
+  const maxActivePriceAlerts = getPositiveInteger(
+    source,
+    ENV_KEY_MAX_ACTIVE_PRICE_ALERTS_PER_USER,
+    DEFAULT_MAX_ACTIVE_PRICE_ALERTS_PER_USER,
+    MIN_SWAP_TIMEOUT_SECONDS,
+  );
+  const coinGeckoApiBaseUrl = getOptionalHttpUrl(source, ENV_KEY_COINGECKO_API_BASE_URL);
   const swapSlippage = getPositiveNumber(
     source,
     ENV_KEY_SWAP_SLIPPAGE,
@@ -377,6 +410,11 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     [ENV_KEY_WC_PROJECT_ID]: walletConnectProjectId ?? source[ENV_KEY_WC_PROJECT_ID],
     [ENV_KEY_APP_PUBLIC_URL]: appPublicUrl ?? source[ENV_KEY_APP_PUBLIC_URL],
     [ENV_KEY_SWAP_TIMEOUT_SECONDS]: swapTimeoutSeconds.toString(),
+    [ENV_KEY_WALLET_CONNECT_SESSION_TTL_SEC]: walletConnectSessionTtl.toString(),
+    [ENV_KEY_TELEGRAM_PENDING_ACTION_TTL_SEC]: telegramPendingActionTtl.toString(),
+    [ENV_KEY_PRICE_ALERTS_POLL_INTERVAL_SEC]: priceAlertsPollInterval.toString(),
+    [ENV_KEY_MAX_ACTIVE_PRICE_ALERTS_PER_USER]: maxActivePriceAlerts.toString(),
+    [ENV_KEY_COINGECKO_API_BASE_URL]: coinGeckoApiBaseUrl ?? source[ENV_KEY_COINGECKO_API_BASE_URL],
     [ENV_KEY_SWAP_SLIPPAGE]: swapSlippage.toString(),
     ...feeEnvironment,
     [ENV_KEY_TELEGRAM_BOT_TOKEN]: telegramBotToken ?? source[ENV_KEY_TELEGRAM_BOT_TOKEN],

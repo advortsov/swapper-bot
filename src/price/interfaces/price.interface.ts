@@ -21,9 +21,10 @@ export interface IPriceRequest {
   chain: ChainType;
   userId: string;
   amount: string;
-  fromSymbol: string;
-  toSymbol: string;
+  fromTokenInput: string;
+  toTokenInput: string;
   rawCommand: string;
+  explicitChain: boolean;
 }
 
 export interface IPriceResponse {
@@ -31,6 +32,8 @@ export interface IPriceResponse {
   aggregator: string;
   fromSymbol: string;
   toSymbol: string;
+  fromTokenAddress: string;
+  toTokenAddress: string;
   fromAmount: string;
   toAmount: string;
   grossToAmount: string;

@@ -40,4 +40,26 @@ export class TokensService implements OnModuleInit {
 
     return token;
   }
+
+  public async getTokenByAddress(address: string, chain: ChainType): Promise<ITokenRecord> {
+    const token = await this.tokensRepository.findByAddress(address, chain);
+
+    if (!token) {
+      throw new BusinessException(`Токен с адресом ${address} не поддерживается в сети ${chain}`);
+    }
+
+    return token;
+  }
+
+  public async upsertToken(token: ITokenSeed): Promise<ITokenRecord> {
+    await this.tokensRepository.upsertToken(token);
+
+    const savedToken = await this.tokensRepository.findByAddress(token.address, token.chain);
+
+    if (!savedToken) {
+      throw new BusinessException(`Не удалось сохранить токен ${token.address}`);
+    }
+
+    return savedToken;
+  }
 }

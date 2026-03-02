@@ -49,6 +49,8 @@ export class SwapService {
       aggregator: priceResponse.aggregator,
       fromSymbol: priceResponse.fromSymbol,
       toSymbol: priceResponse.toSymbol,
+      fromTokenAddress: priceResponse.fromTokenAddress,
+      toTokenAddress: priceResponse.toTokenAddress,
       fromAmount: priceResponse.fromAmount,
       toAmount: priceResponse.toAmount,
       grossToAmount: priceResponse.grossToAmount,
@@ -120,6 +122,7 @@ export class SwapService {
       sessionId: walletConnectSession.sessionId,
       expiresAt: walletConnectSession.expiresAt,
       quoteExpiresAt: consumedIntent.quoteExpiresAt.toISOString(),
+      walletDelivery: walletConnectSession.walletDelivery,
     };
   }
 
@@ -195,10 +198,11 @@ export class SwapService {
     return {
       userId,
       amount: request.amount,
-      fromSymbol: request.fromSymbol,
-      toSymbol: request.toSymbol,
+      fromTokenInput: request.fromTokenInput,
+      toTokenInput: request.toTokenInput,
       chain: request.chain,
       rawCommand: request.rawCommand,
+      explicitChain: request.explicitChain,
     };
   }
 

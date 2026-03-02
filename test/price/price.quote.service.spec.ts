@@ -13,7 +13,6 @@ import { QuoteMonetizationService } from '../../src/fees/quote-monetization.serv
 import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
 import { PriceQuoteService } from '../../src/price/price.quote.service';
 import type { ITokenRecord } from '../../src/tokens/tokens.repository';
-import type { TokensService } from '../../src/tokens/tokens.service';
 import { createDisabledFeeConfig, createQuoteResponse } from '../support/fee.fixtures';
 
 const FROM_TOKEN: ITokenRecord = {
@@ -98,9 +97,10 @@ const priceRequest: IPriceRequest = {
   chain: 'ethereum',
   userId: 'user-1',
   amount: '10',
-  fromSymbol: 'ETH',
-  toSymbol: 'USDC',
+  fromTokenInput: 'ETH',
+  toTokenInput: 'USDC',
   rawCommand: '/price 10 ETH to USDC',
+  explicitChain: false,
 };
 
 function createFakeChain(name: ChainType): IChain {
@@ -131,9 +131,9 @@ function createService(
     executionFee: createDisabledFeeConfig(aggregatorName, chain),
   }),
 ): PriceQuoteService {
-  const tokensService: Pick<TokensService, 'getTokenBySymbol'> = {
-    getTokenBySymbol: async (symbol: string, chain: ChainType): Promise<ITokenRecord> => {
-      if (symbol === FROM_TOKEN.symbol) {
+  const tokenAddressResolverService = {
+    resolveTokenInput: async (tokenInput: string, chain: ChainType): Promise<ITokenRecord> => {
+      if (tokenInput.toUpperCase() === FROM_TOKEN.symbol) {
         return { ...FROM_TOKEN, chain };
       }
 
@@ -155,9 +155,9 @@ function createService(
 
   return new PriceQuoteService(
     aggregators,
-    tokensService as TokensService,
     chains,
     quoteMonetizationService,
+    tokenAddressResolverService as never,
   );
 }
 
@@ -262,7 +262,9 @@ describe('PriceQuoteService', () => {
     });
     const selection = await service.fetchQuoteSelection(preparedInput);
 
-    expect(preparedInput.cacheKey).toBe('arbitrum:ETH:USDC:10');
+    expect(preparedInput.cacheKey).toBe(
+      'arbitrum:0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE:0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:10',
+    );
     expect(selection.bestQuote.aggregatorName).toBe('odos');
     expect(arbAggregator.lastQuoteRequest?.chain).toBe('arbitrum');
   });

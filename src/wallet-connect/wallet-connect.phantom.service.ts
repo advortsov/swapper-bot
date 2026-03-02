@@ -1,36 +1,44 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import bs58 from 'bs58';
-import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import nacl from 'tweetnacl';
 
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
 import type {
+  ICreateWalletConnectConnectionInput,
   ICreateWalletConnectSessionInput,
   IPhantomCallbackQuery,
   IPhantomSessionState,
+  IWalletConnectionSession,
   IWalletConnectSession,
+  IWalletConnectSwapPayload,
   IWalletConnectSessionPublic,
 } from './interfaces/wallet-connect.interface';
 import {
   DEFAULT_APP_PUBLIC_URL,
   DEFAULT_SWAP_TIMEOUT_SECONDS,
   MIN_SWAP_TIMEOUT_SECONDS,
-  PHANTOM_APP_BASE_URL,
   PHANTOM_CLUSTER,
   PHANTOM_CONNECT_CALLBACK_PATH,
   PHANTOM_CONNECT_METHOD,
-  PHANTOM_NONCE_LENGTH,
-  PHANTOM_SIGN_CALLBACK_PATH,
-  PHANTOM_SIGN_TRANSACTION_METHOD,
   TELEGRAM_API_BASE_URL,
   TELEGRAM_PREVIEW_DISABLED,
 } from './wallet-connect.constants';
-import type {
-  IPhantomConnectPayload,
-  IPhantomSignedTransactionPayload,
-} from './wallet-connect.phantom.types';
+import {
+  buildAppUrl,
+  buildPhantomSignTransactionUrl,
+  buildPhantomUrl,
+  buildSolanaExplorerUrl,
+  decodeBase58,
+  encodeBase58,
+  decryptPhantomPayload,
+  getRequiredLastValidBlockHeight,
+  getRequiredPayloadValue,
+  getRequiredQueryValue,
+  throwIfPhantomRejected,
+  toPhantomConnectPayload,
+  toPhantomSignedTransactionPayload,
+} from './wallet-connect.phantom.helpers';
 import { WalletConnectSessionStore } from './wallet-connect.session-store';
 import { escapeHtml, getWalletConnectErrorMessage } from './wallet-connect.utils';
 import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
@@ -59,39 +67,66 @@ export class WalletConnectPhantomService {
     this.telegramBotToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '';
   }
 
-  public async createSession(
-    input: ICreateWalletConnectSessionInput,
+  public async createConnectionSession(
+    input: ICreateWalletConnectConnectionInput,
   ): Promise<IWalletConnectSessionPublic> {
-    const sessionId = randomUUID();
-    const expiresAt = Date.now() + this.swapTimeoutSeconds * 1_000;
-    const keyPair = nacl.box.keyPair();
-    const phantomState: IPhantomSessionState = {
-      dappEncryptionPublicKey: bs58.encode(keyPair.publicKey),
-      dappEncryptionSecretKey: bs58.encode(keyPair.secretKey),
-    };
-    const uri = this.buildPhantomUrl(PHANTOM_CONNECT_METHOD, {
-      dapp_encryption_public_key: phantomState.dappEncryptionPublicKey,
-      cluster: PHANTOM_CLUSTER,
-      app_url: this.appPublicUrl,
-      redirect_link: this.buildAppUrl(PHANTOM_CONNECT_CALLBACK_PATH, sessionId),
-    });
-    const session: IWalletConnectSession = {
-      sessionId,
-      userId: input.userId,
-      uri,
-      expiresAt,
-      swapPayload: {
-        ...input.swapPayload,
-      },
-      phantom: phantomState,
-    };
+    const session = this.createBaseSession(input.userId, 'connect');
 
     this.sessionStore.save(session);
 
     return {
-      sessionId,
+      sessionId: session.sessionId,
       uri: session.uri,
-      expiresAt: new Date(expiresAt).toISOString(),
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      walletDelivery: 'app-link',
+    };
+  }
+
+  public async createSession(
+    input: ICreateWalletConnectSessionInput,
+  ): Promise<IWalletConnectSessionPublic> {
+    const session = this.createBaseSession(input.userId, 'swap', input.swapPayload);
+
+    this.sessionStore.save(session);
+
+    return {
+      sessionId: session.sessionId,
+      uri: session.uri,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      walletDelivery: 'app-link',
+    };
+  }
+
+  public async createSwapSessionFromConnection(
+    input: ICreateWalletConnectSessionInput,
+    connection: IWalletConnectionSession,
+  ): Promise<IWalletConnectSessionPublic> {
+    if (!connection.phantom) {
+      throw new BusinessException('Phantom connection is not available');
+    }
+
+    const session = this.createBaseSession(
+      input.userId,
+      'swap',
+      input.swapPayload,
+      connection.phantom,
+    );
+    this.sessionStore.save(session);
+
+    const transaction = await this.buildSwapTransaction(session.sessionId, connection.address);
+    const signUrl = buildPhantomSignTransactionUrl({
+      configService: this.configService,
+      session,
+      transaction,
+      phantomState: connection.phantom,
+      sessionStore: this.sessionStore,
+    });
+
+    return {
+      sessionId: session.sessionId,
+      uri: signUrl,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      walletDelivery: 'app-link',
     };
   }
 
@@ -99,50 +134,72 @@ export class WalletConnectPhantomService {
     return this.getSolanaSession(sessionId).uri;
   }
 
-  public async handleConnectCallback(query: IPhantomCallbackQuery): Promise<string> {
+  public async handleConnectCallback(query: IPhantomCallbackQuery): Promise<string | null> {
     const session = this.getSolanaSession(query.sessionId);
     const phantomState = this.ensurePhantomState(session);
 
     try {
-      this.throwIfPhantomRejected(query, 'Подключение Phantom было отклонено');
-      const phantomEncryptionPublicKey = this.getRequiredQueryValue(
+      throwIfPhantomRejected(query, 'Подключение Phantom было отклонено');
+      const phantomEncryptionPublicKey = getRequiredQueryValue(
         query.phantom_encryption_public_key,
         'phantom_encryption_public_key',
       );
       const sharedSecret = nacl.box.before(
-        this.decodeBase58(phantomEncryptionPublicKey, 'phantom_encryption_public_key'),
-        this.decodeBase58(phantomState.dappEncryptionSecretKey, 'dapp_encryption_secret_key'),
+        decodeBase58(phantomEncryptionPublicKey, 'phantom_encryption_public_key'),
+        decodeBase58(phantomState.dappEncryptionSecretKey, 'dapp_encryption_secret_key'),
       );
-      const connectPayload = this.toPhantomConnectPayload(
-        this.decryptPhantomPayload(
-          this.getRequiredQueryValue(query.data, 'data'),
-          this.getRequiredQueryValue(query.nonce, 'nonce'),
+      const connectPayload = toPhantomConnectPayload(
+        decryptPhantomPayload(
+          getRequiredQueryValue(query.data, 'data'),
+          getRequiredQueryValue(query.nonce, 'nonce'),
           sharedSecret,
         ),
       );
 
       session.phantom = {
         ...phantomState,
-        sharedSecret: bs58.encode(sharedSecret),
+        sharedSecret: encodeBase58(sharedSecret, 'sharedSecret'),
         phantomEncryptionPublicKey,
-        phantomSession: this.getRequiredPayloadValue(connectPayload.session, 'session'),
-        walletAddress: this.getRequiredPayloadValue(connectPayload.public_key, 'public_key'),
+        phantomSession: getRequiredPayloadValue(connectPayload.session, 'session'),
+        walletAddress: getRequiredPayloadValue(connectPayload.public_key, 'public_key'),
       };
+      this.saveReusableConnection(session);
+
+      if (session.kind === 'connect') {
+        await this.sendTelegramMessage(
+          session.userId,
+          [
+            'Phantom подключён.',
+            `Адрес: <code>${escapeHtml(session.phantom.walletAddress ?? '')}</code>`,
+          ].join('\n'),
+        );
+        this.sessionStore.delete(session.sessionId);
+        return null;
+      }
+
       const connectedState = this.getConnectedPhantomState(session);
       const transaction = await this.buildSwapTransaction(
         session.sessionId,
-        this.getRequiredPayloadValue(connectedState.walletAddress, 'walletAddress'),
+        getRequiredPayloadValue(connectedState.walletAddress, 'walletAddress'),
       );
 
-      return this.buildPhantomSignTransactionUrl(session, transaction);
+      return buildPhantomSignTransactionUrl({
+        configService: this.configService,
+        session,
+        transaction,
+        phantomState: connectedState,
+        sessionStore: this.sessionStore,
+      });
     } catch (error: unknown) {
       const message = getWalletConnectErrorMessage(error);
-      await this.swapExecutionAuditService.markError(
-        session.swapPayload.executionId,
-        session.swapPayload.aggregatorName,
-        session.swapPayload.feeMode,
-        message,
-      );
+      if (session.swapPayload) {
+        await this.swapExecutionAuditService.markError(
+          session.swapPayload.executionId,
+          session.swapPayload.aggregatorName,
+          session.swapPayload.feeMode,
+          message,
+        );
+      }
       await this.sendTelegramMessage(
         session.userId,
         `Ошибка подключения Phantom: ${escapeHtml(message)}`,
@@ -155,45 +212,46 @@ export class WalletConnectPhantomService {
     query: IPhantomCallbackQuery,
   ): Promise<{ explorerUrl: string; transactionHash: string }> {
     const session = this.getSolanaSession(query.sessionId);
+    const swapPayload = this.getSwapPayload(session);
 
     try {
-      this.throwIfPhantomRejected(query, 'Подпись в Phantom была отклонена');
+      throwIfPhantomRejected(query, 'Подпись в Phantom была отклонена');
       const phantomState = this.getConnectedPhantomState(session);
-      const signedPayload = this.toPhantomSignedTransactionPayload(
-        this.decryptPhantomPayload(
-          this.getRequiredQueryValue(query.data, 'data'),
-          this.getRequiredQueryValue(query.nonce, 'nonce'),
-          this.decodeBase58(
-            this.getRequiredPayloadValue(phantomState.sharedSecret, 'sharedSecret'),
+      const signedPayload = toPhantomSignedTransactionPayload(
+        decryptPhantomPayload(
+          getRequiredQueryValue(query.data, 'data'),
+          getRequiredQueryValue(query.nonce, 'nonce'),
+          decodeBase58(
+            getRequiredPayloadValue(phantomState.sharedSecret, 'sharedSecret'),
             'sharedSecret',
           ),
         ),
       );
       const transactionHash = await this.solanaChain.broadcastSignedTransaction(
         Uint8Array.from(
-          this.decodeBase58(
-            this.getRequiredPayloadValue(signedPayload.transaction, 'transaction'),
+          decodeBase58(
+            getRequiredPayloadValue(signedPayload.transaction, 'transaction'),
             'transaction',
           ),
         ),
-        this.getRequiredLastValidBlockHeight(session),
+        getRequiredLastValidBlockHeight(session),
       );
-      const explorerUrl = this.buildExplorerUrl(transactionHash);
+      const explorerUrl = buildSolanaExplorerUrl(this.configService, transactionHash);
 
       await this.sendTelegramMessage(
         session.userId,
         [
           'Своп отправлен.',
           'Сеть: solana',
-          `Агрегатор: ${session.swapPayload.aggregatorName}`,
+          `Агрегатор: ${swapPayload.aggregatorName}`,
           `Tx: <code>${escapeHtml(transactionHash)}</code>`,
           `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
         ].join('\n'),
       );
       await this.swapExecutionAuditService.markSuccess(
-        session.swapPayload.executionId,
-        session.swapPayload.aggregatorName,
-        session.swapPayload.feeMode,
+        swapPayload.executionId,
+        swapPayload.aggregatorName,
+        swapPayload.feeMode,
         transactionHash,
       );
 
@@ -204,9 +262,9 @@ export class WalletConnectPhantomService {
     } catch (error: unknown) {
       const message = getWalletConnectErrorMessage(error);
       await this.swapExecutionAuditService.markError(
-        session.swapPayload.executionId,
-        session.swapPayload.aggregatorName,
-        session.swapPayload.feeMode,
+        swapPayload.executionId,
+        swapPayload.aggregatorName,
+        swapPayload.feeMode,
         message,
       );
       await this.sendTelegramMessage(session.userId, `Ошибка свопа: ${escapeHtml(message)}`);
@@ -221,19 +279,62 @@ export class WalletConnectPhantomService {
     walletAddress: string,
   ): Promise<ISwapTransaction> {
     const session = this.getSolanaSession(sessionId);
-    const aggregator = this.resolveAggregator(session.swapPayload.aggregatorName);
+    const aggregator = this.resolveAggregator(this.getSwapPayload(session).aggregatorName);
+    const swapPayload = this.getSwapPayload(session);
 
     return aggregator.buildSwapTransaction({
-      chain: session.swapPayload.chain,
-      sellTokenAddress: session.swapPayload.sellTokenAddress,
-      buyTokenAddress: session.swapPayload.buyTokenAddress,
-      sellAmountBaseUnits: session.swapPayload.sellAmountBaseUnits,
-      sellTokenDecimals: session.swapPayload.sellTokenDecimals,
-      buyTokenDecimals: session.swapPayload.buyTokenDecimals,
+      chain: swapPayload.chain,
+      sellTokenAddress: swapPayload.sellTokenAddress,
+      buyTokenAddress: swapPayload.buyTokenAddress,
+      sellAmountBaseUnits: swapPayload.sellAmountBaseUnits,
+      sellTokenDecimals: swapPayload.sellTokenDecimals,
+      buyTokenDecimals: swapPayload.buyTokenDecimals,
       fromAddress: walletAddress,
-      slippagePercentage: session.swapPayload.slippagePercentage,
-      feeConfig: session.swapPayload.executionFee,
+      slippagePercentage: swapPayload.slippagePercentage,
+      feeConfig: swapPayload.executionFee,
     });
+  }
+
+  private createBaseSession(
+    userId: string,
+    kind: 'connect' | 'swap',
+    swapPayload?: ICreateWalletConnectSessionInput['swapPayload'],
+    initialPhantomState?: IPhantomSessionState,
+  ): IWalletConnectSession {
+    const sessionId = randomUUID();
+    const expiresAt = Date.now() + this.swapTimeoutSeconds * 1_000;
+    const phantomState = initialPhantomState ?? this.createInitialPhantomState();
+
+    const session: IWalletConnectSession = {
+      sessionId,
+      userId,
+      uri: buildPhantomUrl(PHANTOM_CONNECT_METHOD, {
+        dapp_encryption_public_key: phantomState.dappEncryptionPublicKey,
+        cluster: PHANTOM_CLUSTER,
+        app_url: this.appPublicUrl,
+        redirect_link: buildAppUrl(this.appPublicUrl, PHANTOM_CONNECT_CALLBACK_PATH, sessionId),
+      }),
+      expiresAt,
+      kind,
+      family: 'solana',
+      chain: 'solana',
+      phantom: phantomState,
+    };
+
+    if (swapPayload) {
+      session.swapPayload = swapPayload;
+    }
+
+    return session;
+  }
+
+  private createInitialPhantomState(): IPhantomSessionState {
+    const keyPair = nacl.box.keyPair();
+
+    return {
+      dappEncryptionPublicKey: encodeBase58(keyPair.publicKey, 'dappEncryptionPublicKey'),
+      dappEncryptionSecretKey: encodeBase58(keyPair.secretKey, 'dappEncryptionSecretKey'),
+    };
   }
 
   private resolveTimeoutSeconds(): number {
@@ -250,7 +351,7 @@ export class WalletConnectPhantomService {
   private getSolanaSession(sessionId: string): IWalletConnectSession {
     const session = this.sessionStore.get(sessionId);
 
-    if (session?.swapPayload.chain !== 'solana') {
+    if (session?.family !== 'solana') {
       throw new BusinessException('Solana swap session is not found or expired');
     }
 
@@ -279,6 +380,33 @@ export class WalletConnectPhantomService {
     return phantomState;
   }
 
+  private getSwapPayload(session: IWalletConnectSession): IWalletConnectSwapPayload {
+    if (!session.swapPayload) {
+      throw new BusinessException('Solana swap payload is not initialized');
+    }
+
+    return session.swapPayload;
+  }
+
+  private saveReusableConnection(session: IWalletConnectSession): void {
+    const phantomState = this.getConnectedPhantomState(session);
+    const now = Date.now();
+
+    this.sessionStore.saveConnection({
+      userId: session.userId,
+      family: 'solana',
+      chain: 'solana',
+      address: phantomState.walletAddress ?? '',
+      walletLabel: 'Phantom',
+      connectedAt: now,
+      lastUsedAt: now,
+      expiresAt: session.expiresAt,
+      phantom: {
+        ...phantomState,
+      },
+    });
+  }
+
   private resolveAggregator(aggregatorName: string): IAggregator {
     const aggregator = this.aggregators.find(
       (candidateAggregator) => candidateAggregator.name === aggregatorName,
@@ -289,170 +417,6 @@ export class WalletConnectPhantomService {
     }
 
     return aggregator;
-  }
-
-  private throwIfPhantomRejected(query: IPhantomCallbackQuery, fallbackMessage: string): void {
-    if (!query.errorCode && !query.errorMessage) {
-      return;
-    }
-
-    const details = [query.errorCode, query.errorMessage].filter(Boolean).join(': ');
-    throw new BusinessException(
-      details === '' ? fallbackMessage : `${fallbackMessage}: ${details}`,
-    );
-  }
-
-  private getRequiredQueryValue(value: string | undefined, key: string): string {
-    if (!value || value.trim() === '') {
-      throw new BusinessException(`Phantom callback is missing query parameter "${key}"`);
-    }
-
-    return value;
-  }
-
-  private getRequiredPayloadValue(value: string | undefined, key: string): string {
-    if (!value || value.trim() === '') {
-      throw new BusinessException(`Phantom payload field "${key}" is missing`);
-    }
-
-    return value;
-  }
-
-  private toPhantomConnectPayload(payload: Record<string, string>): IPhantomConnectPayload {
-    return {
-      public_key: this.getRequiredPayloadValue(payload['public_key'], 'public_key'),
-      session: this.getRequiredPayloadValue(payload['session'], 'session'),
-    };
-  }
-
-  private toPhantomSignedTransactionPayload(
-    payload: Record<string, string>,
-  ): IPhantomSignedTransactionPayload {
-    return {
-      transaction: this.getRequiredPayloadValue(payload['transaction'], 'transaction'),
-    };
-  }
-
-  private decryptPhantomPayload(
-    data: string,
-    nonce: string,
-    sharedSecret: Uint8Array,
-  ): Record<string, string> {
-    const decryptedData = nacl.box.open.after(
-      this.decodeBase58(data, 'data'),
-      this.decodeBase58(nonce, 'nonce'),
-      sharedSecret,
-    );
-
-    if (!decryptedData) {
-      throw new BusinessException('Failed to decrypt Phantom payload');
-    }
-
-    return JSON.parse(Buffer.from(decryptedData).toString('utf8')) as Record<string, string>;
-  }
-
-  private encryptPhantomPayload(
-    payload: object,
-    sharedSecret: Uint8Array,
-  ): { nonce: string; payload: string } {
-    const nonce = nacl.randomBytes(PHANTOM_NONCE_LENGTH);
-    const encryptedPayload = nacl.box.after(
-      Buffer.from(JSON.stringify(payload)),
-      nonce,
-      sharedSecret,
-    );
-
-    return {
-      nonce: bs58.encode(nonce),
-      payload: bs58.encode(encryptedPayload),
-    };
-  }
-
-  private decodeBase58(value: string, label: string): Uint8Array {
-    try {
-      return bs58.decode(value);
-    } catch {
-      throw new BusinessException(`Phantom field "${label}" is not valid base58`);
-    }
-  }
-
-  private buildPhantomSignTransactionUrl(
-    session: IWalletConnectSession,
-    transaction: ISwapTransaction,
-  ): string {
-    if (
-      transaction.kind !== 'solana' ||
-      !transaction.serializedTransaction ||
-      !transaction.lastValidBlockHeight
-    ) {
-      throw new BusinessException('Solana swap transaction is missing');
-    }
-
-    const phantomState = this.getConnectedPhantomState(session);
-    const sharedSecret = this.decodeBase58(
-      this.getRequiredPayloadValue(phantomState.sharedSecret, 'sharedSecret'),
-      'sharedSecret',
-    );
-    const encryptedPayload = this.encryptPhantomPayload(
-      {
-        session: this.getRequiredPayloadValue(phantomState.phantomSession, 'phantomSession'),
-        transaction: bs58.encode(Buffer.from(transaction.serializedTransaction, 'base64')),
-      },
-      sharedSecret,
-    );
-    session.phantom = {
-      ...phantomState,
-      walletAddress: this.getRequiredPayloadValue(phantomState.walletAddress, 'walletAddress'),
-      lastValidBlockHeight: transaction.lastValidBlockHeight,
-    };
-
-    return this.buildPhantomUrl(PHANTOM_SIGN_TRANSACTION_METHOD, {
-      dapp_encryption_public_key: phantomState.dappEncryptionPublicKey,
-      nonce: encryptedPayload.nonce,
-      redirect_link: this.buildAppUrl(PHANTOM_SIGN_CALLBACK_PATH, session.sessionId),
-      payload: encryptedPayload.payload,
-    });
-  }
-
-  private getRequiredLastValidBlockHeight(session: IWalletConnectSession): number {
-    const rawValue = session.phantom?.lastValidBlockHeight;
-
-    if (rawValue === undefined) {
-      throw new BusinessException('Solana lastValidBlockHeight is missing');
-    }
-
-    if (!Number.isInteger(rawValue) || rawValue <= 0) {
-      throw new BusinessException('Solana lastValidBlockHeight is invalid');
-    }
-
-    return rawValue;
-  }
-
-  private buildAppUrl(pathname: string, sessionId: string): string {
-    const url = new URL(pathname, this.appPublicUrl);
-    url.searchParams.set('sessionId', sessionId);
-    return url.toString();
-  }
-
-  private buildPhantomUrl(method: string, params: Record<string, string>): string {
-    const url = new URL(method, PHANTOM_APP_BASE_URL);
-
-    for (const [key, value] of Object.entries(params)) {
-      url.searchParams.set(key, value);
-    }
-
-    return url.toString();
-  }
-
-  private buildExplorerUrl(transactionHash: string): string {
-    const baseUrl =
-      this.configService.get<string>('EXPLORER_URL_SOLANA') ?? 'https://solscan.io/tx/';
-
-    if (baseUrl.trim() === '') {
-      throw new BusinessException('Explorer URL for chain solana is not configured');
-    }
-
-    return `${baseUrl}${transactionHash}`;
   }
 
   private async sendTelegramMessage(chatId: string, text: string): Promise<void> {

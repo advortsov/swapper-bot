@@ -45,17 +45,31 @@ curl http://localhost:3000/health
 ```text
 /price 10 ETH to USDC
 /price 10 ETH to USDC on arbitrum
+/price 100 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 to USDT on ethereum
 /price 1 SOL to USDC on solana
 /swap 0.1 ETH to USDC
 /swap 0.1 ETH to USDC on base
+/swap 100 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 to USDT on ethereum
 /swap 1 SOL to USDC on solana
+/connect
+/connect on solana
+/disconnect
+/favorites
+/history
 ```
 
 `/price` возвращает лучший курс по `net`, число опрошенных провайдеров и по каждому провайдеру показывает `gross`, комиссию бота и итоговый `net`.
 Поддерживаемые сети: `ethereum` (по умолчанию), `arbitrum`, `base`, `optimism`, `solana`.
 Для `solana` поддержаны `/price` и `/swap` через WalletConnect.
+Если вместо символа указывается адрес токена, сеть через `on <chain>` обязательна.
 
 `/swap` сначала создаёт server-side intent, затем показывает кнопки выбора агрегатора с opaque callback token. После выбора бот готовит swap-session только для выбранного провайдера и повторно показывает `gross / fee / net` и срок актуальности quote.
+
+`/connect` и `/disconnect` позволяют явно управлять подключением кошелька. Активные WalletConnect-сессии кешируются в `node-cache` внутри живого процесса, поэтому после успешного `/connect` следующий `/swap` может использовать уже подключённый кошелёк без нового pairing flow.
+
+`/favorites` показывает сохранённые пары, а алерты по курсу работают как одноразовый порог `best net >= target`.
+
+`/history` показывает последние 10 успешных свопов пользователя из audit trail.
 
 ## Проверки качества
 
