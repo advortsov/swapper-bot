@@ -363,11 +363,12 @@ export async function executeWalletSwapOverConnection(input: {
       telegramBotToken,
       chatId: connection.userId,
       text: [
-        'Запрос на своп отправлен в уже подключённый кошелёк.',
-        `Сеть: ${swapPayload.chain}`,
-        `Агрегатор: ${swapPayload.aggregatorName}`,
-        `Tx: <code>${escapeWalletConnectHtml(transactionHash)}</code>`,
-        `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
+        '✅ <b>Запрос на своп отправлен в подключённый кошелёк</b>',
+        '',
+        `🌐 Сеть: <code>${escapeWalletConnectHtml(swapPayload.chain)}</code>`,
+        `🏆 Агрегатор: <code>${escapeWalletConnectHtml(swapPayload.aggregatorName)}</code>`,
+        `🧾 Tx: <code>${escapeWalletConnectHtml(transactionHash)}</code>`,
+        `<a href="${escapeWalletConnectHtml(explorerUrl)}">Открыть в эксплорере</a>`,
       ].join('\n'),
       logger,
     });
@@ -382,7 +383,7 @@ export async function executeWalletSwapOverConnection(input: {
     await sendWalletConnectTelegramMessage({
       telegramBotToken,
       chatId: connection.userId,
-      text: `Ошибка свопа: ${escapeWalletConnectHtml(message)}`,
+      text: `❌ <b>Ошибка:</b> ${escapeWalletConnectHtml(message)}`,
       logger,
     });
   }

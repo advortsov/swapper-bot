@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { PriceAlertsService } from './price-alerts.service';
 import { PriceQuoteService } from '../price/price.quote.service';
+import { buildAlertTriggeredMessage } from '../telegram/telegram.message-formatters';
 import { TELEGRAM_API_BASE_URL } from '../wallet-connect/wallet-connect.constants';
 
 const DEFAULT_POLL_INTERVAL_SECONDS = 60;
@@ -82,14 +83,15 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
       await this.priceAlertsService.markTriggered(alert.id, response.toAmount, response.aggregator);
       await this.sendTelegramMessage(
         alert.userId,
-        [
-          'Сработал алерт по курсу.',
-          `Сеть: ${alert.chain}`,
-          `Пара: ${alert.amount} ${alert.fromTokenSymbol} -> ${alert.toTokenSymbol}`,
-          `Цель: ${alert.targetToAmount} ${alert.toTokenSymbol}`,
-          `Текущий net: ${response.toAmount} ${alert.toTokenSymbol}`,
-          `Лучший агрегатор: ${response.aggregator}`,
-        ].join('\n'),
+        buildAlertTriggeredMessage({
+          chain: alert.chain,
+          amount: alert.amount,
+          fromTokenSymbol: alert.fromTokenSymbol,
+          toTokenSymbol: alert.toTokenSymbol,
+          targetToAmount: alert.targetToAmount,
+          currentToAmount: response.toAmount,
+          aggregator: response.aggregator,
+        }),
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -112,6 +114,7 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
         body: JSON.stringify({
           chat_id: chatId,
           text,
+          parse_mode: 'HTML',
           disable_web_page_preview: true,
         }),
       },

@@ -4,7 +4,13 @@ import type { Context } from 'telegraf';
 import type { IPriceCommandDto } from './dto/price-command.dto';
 import type { ISwapCommandDto } from './dto/swap-command.dto';
 import { TelegramConnectionsService } from './telegram.connections.service';
+import {
+  buildPriceMessage,
+  buildSwapButtonText,
+  buildSwapQuotesMessage,
+} from './telegram.message-formatters';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
+import { createDateTimeFormatter, formatLocalDateTime, formatSwapValidity } from './telegram.time';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { DEFAULT_CHAIN, SUPPORTED_CHAINS } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
@@ -18,7 +24,6 @@ const PRICE_COMMAND_REGEX =
 const SWAP_COMMAND_REGEX =
   /^\/swap\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z0-9]+)\s+to\s+([a-zA-Z0-9]+)(?:\s+on\s+([a-zA-Z0-9_-]+))?$/i;
 const SUPPORTED_CHAIN_SET = new Set<ChainType>(SUPPORTED_CHAINS);
-const GAS_USD_PRECISION = 4;
 const AMOUNT_MATCH_INDEX = 1;
 const FROM_SYMBOL_MATCH_INDEX = 2;
 const TO_SYMBOL_MATCH_INDEX = 3;
@@ -28,13 +33,16 @@ const SWAP_CALLBACK_PREFIX = 'sw:';
 @Injectable()
 export class TelegramTradingService {
   private readonly logger = new Logger(TelegramTradingService.name);
+  private readonly dateTimeFormatter: Intl.DateTimeFormat;
 
   public constructor(
     private readonly priceService: PriceService,
     private readonly swapService: SwapService,
     private readonly usersRepository: UsersRepository,
     private readonly portfolioService: TelegramPortfolioService,
-  ) {}
+  ) {
+    this.dateTimeFormatter = createDateTimeFormatter(process.env['APP_TIMEZONE']);
+  }
 
   public async handlePrice(
     context: Context,
@@ -63,7 +71,8 @@ export class TelegramTradingService {
       userId,
     });
 
-    await context.reply(this.buildPriceMessage(result), {
+    await context.reply(buildPriceMessage(result), {
+      parse_mode: 'HTML',
       reply_markup: { inline_keyboard: keyboard },
     });
   }
@@ -87,20 +96,28 @@ export class TelegramTradingService {
       explicitChain: command.explicitChain,
     });
 
-    await context.reply(this.buildSwapQuotesMessage(quotes), {
-      reply_markup: {
-        inline_keyboard: [
-          ...this.buildSwapButtons(quotes.providerQuotes, quotes.toSymbol, quotes.aggregator),
-          ...this.portfolioService.buildFavoriteActionButtons({
-            chain: quotes.chain,
-            amount: quotes.fromAmount,
-            fromTokenAddress: quotes.fromTokenAddress,
-            toTokenAddress: quotes.toTokenAddress,
-            userId,
-          }),
-        ],
+    await context.reply(
+      buildSwapQuotesMessage(
+        quotes,
+        formatLocalDateTime(quotes.quoteExpiresAt, this.dateTimeFormatter),
+        formatSwapValidity(quotes.quoteExpiresAt),
+      ),
+      {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            ...this.buildSwapButtons(quotes.providerQuotes, quotes.toSymbol, quotes.aggregator),
+            ...this.portfolioService.buildFavoriteActionButtons({
+              chain: quotes.chain,
+              amount: quotes.fromAmount,
+              fromTokenAddress: quotes.fromTokenAddress,
+              toTokenAddress: quotes.toTokenAddress,
+              userId,
+            }),
+          ],
+        },
       },
-    });
+    );
   }
 
   public async handleSwapCallback(
@@ -125,55 +142,6 @@ export class TelegramTradingService {
     return data.startsWith(SWAP_CALLBACK_PREFIX);
   }
 
-  private buildPriceMessage(result: Awaited<ReturnType<PriceService['getBestQuote']>>): string {
-    const gasText =
-      result.estimatedGasUsd === null
-        ? 'N/A'
-        : `$${result.estimatedGasUsd.toFixed(GAS_USD_PRECISION)}`;
-    const providerQuoteLines = result.providerQuotes.flatMap((quote) =>
-      this.buildQuoteLines(quote, result.toSymbol),
-    );
-
-    return [
-      `Лучший курс для ${result.fromAmount} ${result.fromSymbol} -> ${result.toAmount} ${result.toSymbol}`,
-      `Сеть: ${result.chain}`,
-      `Агрегатор: ${result.aggregator}`,
-      `Gross: ${result.grossToAmount} ${result.toSymbol}`,
-      `Комиссия бота: ${result.feeAmount} ${result.feeAmountSymbol ?? result.toSymbol} (${result.feeBps} bps, ${result.feeDisplayLabel})`,
-      `Net: ${result.toAmount} ${result.toSymbol}`,
-      `Оценка газа в USD: ${gasText}`,
-      `Провайдеров опрошено: ${result.providersPolled}`,
-      'Котировки провайдеров:',
-      ...providerQuoteLines,
-    ].join('\n');
-  }
-
-  private buildSwapQuotesMessage(
-    quotes: Awaited<ReturnType<SwapService['getSwapQuotes']>>,
-  ): string {
-    const providerQuoteLines = quotes.providerQuotes.flatMap((quote) =>
-      this.buildQuoteLines(quote, quotes.toSymbol),
-    );
-
-    return [
-      `Котировки для ${quotes.fromAmount} ${quotes.fromSymbol} -> ${quotes.toAmount} ${quotes.toSymbol}`,
-      `Сеть: ${quotes.chain}`,
-      `Лучший агрегатор: ${quotes.aggregator}`,
-      `Gross: ${quotes.grossToAmount} ${quotes.toSymbol}`,
-      `Комиссия бота: ${quotes.feeAmount} ${quotes.feeAmountSymbol ?? quotes.toSymbol} (${quotes.feeBps} bps, ${quotes.feeDisplayLabel})`,
-      `Net: ${quotes.toAmount} ${quotes.toSymbol}`,
-      `Срок актуальности свопа: ${quotes.quoteExpiresAt}`,
-      `Котировка актуальна до: ${quotes.quoteExpiresAt}`,
-      `Провайдеров опрошено: ${quotes.providersPolled}`,
-      'Итоговая транзакция будет собрана уже с учётом комиссии бота.',
-      '',
-      'Доступные котировки:',
-      ...providerQuoteLines,
-      '',
-      'Выбери агрегатор для свопа:',
-    ].join('\n');
-  }
-
   private buildSwapButtons(
     providerQuotes: readonly IProviderQuote[],
     toSymbol: string,
@@ -184,32 +152,15 @@ export class TelegramTradingService {
         return [];
       }
 
-      const prefix = quote.aggregator === bestAggregator ? '\u2B50 ' : '';
-      const feeText =
-        quote.feeAmount === '0'
-          ? 'no fee'
-          : `${quote.feeDisplayLabel}: ${quote.feeAmount} ${quote.feeAmountSymbol ?? toSymbol}`;
-
       return [
         [
           {
-            text: `${prefix}${quote.aggregator}: ${quote.toAmount} ${toSymbol} • ${feeText}`,
+            text: buildSwapButtonText(quote, toSymbol, bestAggregator),
             callback_data: `${SWAP_CALLBACK_PREFIX}${quote.selectionToken}`,
           },
         ],
       ];
     });
-  }
-
-  private buildQuoteLines(quote: IProviderQuote, toSymbol: string): readonly string[] {
-    const gasText =
-      quote.estimatedGasUsd === null
-        ? 'N/A'
-        : `$${quote.estimatedGasUsd.toFixed(GAS_USD_PRECISION)}`;
-
-    return [
-      `- ${quote.aggregator}: gross ${quote.grossToAmount} ${toSymbol}, fee ${quote.feeAmount} ${quote.feeAmountSymbol ?? toSymbol} (${quote.feeDisplayLabel}), net ${quote.toAmount} ${toSymbol}, gas ${gasText}`,
-    ];
   }
 
   private parsePriceCommand(text: string): IPriceCommandDto {

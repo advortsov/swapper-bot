@@ -3,6 +3,11 @@ import type { Context, Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 
 import { TelegramConnectionsService } from './telegram.connections.service';
+import {
+  buildErrorMessage,
+  buildHelpMessage,
+  buildStartMessage,
+} from './telegram.message-formatters';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
 import { TelegramTradingService } from './telegram.trading.service';
@@ -20,6 +25,7 @@ export class TelegramUpdateHandler {
 
   public register(bot: Telegraf): void {
     bot.command('start', async (context: Context) => this.handleStart(context));
+    bot.command('help', async (context: Context) => this.handleHelp(context));
     bot.command('price', async (context: Context) => this.handlePrice(context));
     bot.command('swap', async (context: Context) => this.handleSwap(context));
     bot.command('connect', async (context: Context) => this.handleConnect(context));
@@ -51,18 +57,11 @@ export class TelegramUpdateHandler {
   }
 
   private async handleStart(context: Context): Promise<void> {
-    await context.reply(
-      [
-        'Привет! Команды:',
-        '/price <amount> <from> to <to> [on <chain>]',
-        '/swap <amount> <from> to <to> [on <chain>]',
-        '/connect [on <chain>]',
-        '/disconnect [on <chain>]',
-        '/favorites',
-        '/history',
-        '/settings — настройки свопа (slippage, агрегатор)',
-      ].join('\n'),
-    );
+    await context.reply(buildStartMessage(), { parse_mode: 'HTML' });
+  }
+
+  private async handleHelp(context: Context): Promise<void> {
+    await context.reply(buildHelpMessage(), { parse_mode: 'HTML' });
   }
 
   private async handlePrice(context: Context): Promise<void> {
@@ -230,6 +229,6 @@ export class TelegramUpdateHandler {
   private async replyWithError(context: Context, prefix: string, error: unknown): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     this.logger.error(`${prefix}: ${message}`);
-    await context.reply(`Ошибка: ${message}`);
+    await context.reply(buildErrorMessage(message), { parse_mode: 'HTML' });
   }
 }

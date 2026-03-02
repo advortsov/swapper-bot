@@ -169,8 +169,9 @@ export class WalletConnectPhantomService {
         await this.sendTelegramMessage(
           session.userId,
           [
-            'Phantom подключён.',
-            `Адрес: <code>${escapeHtml(session.phantom.walletAddress ?? '')}</code>`,
+            '👛 <b>Phantom подключён</b>',
+            '',
+            `🆔 Адрес: <code>${escapeHtml(session.phantom.walletAddress ?? '')}</code>`,
           ].join('\n'),
         );
         this.sessionStore.delete(session.sessionId);
@@ -200,10 +201,7 @@ export class WalletConnectPhantomService {
           message,
         );
       }
-      await this.sendTelegramMessage(
-        session.userId,
-        `Ошибка подключения Phantom: ${escapeHtml(message)}`,
-      );
+      await this.sendTelegramMessage(session.userId, `❌ <b>Ошибка:</b> ${escapeHtml(message)}`);
       throw new BusinessException(message);
     }
   }
@@ -241,11 +239,12 @@ export class WalletConnectPhantomService {
       await this.sendTelegramMessage(
         session.userId,
         [
-          'Своп отправлен.',
-          'Сеть: solana',
-          `Агрегатор: ${swapPayload.aggregatorName}`,
-          `Tx: <code>${escapeHtml(transactionHash)}</code>`,
-          `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
+          '✅ <b>Своп отправлен</b>',
+          '',
+          '🌐 Сеть: <code>solana</code>',
+          `🏆 Агрегатор: <code>${escapeHtml(swapPayload.aggregatorName)}</code>`,
+          `🧾 Tx: <code>${escapeHtml(transactionHash)}</code>`,
+          `<a href="${escapeHtml(explorerUrl)}">Открыть в эксплорере</a>`,
         ].join('\n'),
       );
       await this.swapExecutionAuditService.markSuccess(
@@ -267,7 +266,7 @@ export class WalletConnectPhantomService {
         swapPayload.feeMode,
         message,
       );
-      await this.sendTelegramMessage(session.userId, `Ошибка свопа: ${escapeHtml(message)}`);
+      await this.sendTelegramMessage(session.userId, `❌ <b>Ошибка:</b> ${escapeHtml(message)}`);
       throw new BusinessException(message);
     } finally {
       this.sessionStore.delete(query.sessionId);

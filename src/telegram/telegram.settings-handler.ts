@@ -2,6 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Context, Telegraf } from 'telegraf';
 import type { InlineKeyboardButton, Message } from 'telegraf/typings/core/types/typegram';
 
+import {
+  buildAggregatorMenuMessage,
+  buildCustomSlippagePrompt,
+  buildErrorMessage,
+  buildSettingsMenuMessage,
+  buildSlippageMenuMessage,
+} from './telegram.message-formatters';
 import { BusinessException } from '../common/exceptions/business.exception';
 import type { IUserSettings } from '../settings/interfaces/user-settings.interface';
 import { UserSettingsService } from '../settings/user-settings.service';
@@ -74,7 +81,12 @@ export class TelegramSettingsHandler {
       message && 'text' in message && typeof message.text === 'string' ? message.text.trim() : '';
 
     if (text === '') {
-      await context.reply('Значение не распознано. Попробуй ещё раз через /settings.');
+      await context.reply(
+        buildErrorMessage('Значение не распознано. Попробуй ещё раз через /settings.'),
+        {
+          parse_mode: 'HTML',
+        },
+      );
       return;
     }
 
@@ -102,7 +114,9 @@ export class TelegramSettingsHandler {
       });
     } catch (error: unknown) {
       this.logger.error(`Settings command failed: ${this.getErrorMessage(error)}`);
-      await context.reply('Не удалось загрузить настройки. Попробуй позже.');
+      await context.reply(buildErrorMessage('Не удалось загрузить настройки. Попробуй позже.'), {
+        parse_mode: 'HTML',
+      });
     }
   }
 
@@ -124,7 +138,7 @@ export class TelegramSettingsHandler {
     } catch (error: unknown) {
       const message = this.getErrorMessage(error);
       this.logger.error(`Settings callback failed: ${message}`);
-      await context.answerCbQuery(`Ошибка: ${message}`);
+      await context.answerCbQuery(`❌ ${message}`);
     }
   }
 
@@ -182,7 +196,8 @@ export class TelegramSettingsHandler {
       callback_data: `s:slip:${value}`,
     }));
 
-    await context.editMessageText('Выбери slippage:', {
+    await context.editMessageText(buildSlippageMenuMessage(), {
+      parse_mode: 'HTML',
       reply_markup: {
         inline_keyboard: [
           presetButtons,
@@ -205,7 +220,8 @@ export class TelegramSettingsHandler {
 
     buttons.push([{ text: 'Назад', callback_data: 's:menu' }]);
 
-    await context.editMessageText('Выбери агрегатор:', {
+    await context.editMessageText(buildAggregatorMenuMessage(), {
+      parse_mode: 'HTML',
       reply_markup: { inline_keyboard: buttons },
     });
     await context.answerCbQuery();
@@ -254,7 +270,10 @@ export class TelegramSettingsHandler {
     this.pendingInputs.set(userId, { field: 'slippage', chatId });
 
     await context.editMessageText(
-      `Введи slippage в процентах (от ${MIN_CUSTOM_SLIPPAGE} до ${MAX_CUSTOM_SLIPPAGE}):`,
+      buildCustomSlippagePrompt(MIN_CUSTOM_SLIPPAGE, MAX_CUSTOM_SLIPPAGE),
+      {
+        parse_mode: 'HTML',
+      },
     );
     await context.answerCbQuery();
   }
@@ -268,7 +287,10 @@ export class TelegramSettingsHandler {
 
     if (!Number.isFinite(value) || value < MIN_CUSTOM_SLIPPAGE || value > MAX_CUSTOM_SLIPPAGE) {
       await context.reply(
-        `Некорректное значение. Slippage должен быть от ${MIN_CUSTOM_SLIPPAGE}% до ${MAX_CUSTOM_SLIPPAGE}%.`,
+        buildErrorMessage(
+          `Некорректное значение. Slippage должен быть от ${MIN_CUSTOM_SLIPPAGE}% до ${MAX_CUSTOM_SLIPPAGE}%.`,
+        ),
+        { parse_mode: 'HTML' },
       );
       return;
     }
@@ -284,7 +306,7 @@ export class TelegramSettingsHandler {
       });
     } catch (error: unknown) {
       const message = this.getErrorMessage(error);
-      await context.reply(`Ошибка: ${message}`);
+      await context.reply(buildErrorMessage(message), { parse_mode: 'HTML' });
     }
   }
 
@@ -293,12 +315,7 @@ export class TelegramSettingsHandler {
       AGGREGATOR_OPTIONS.find((option) => option.value === settings.preferredAggregator)?.label ??
       settings.preferredAggregator;
 
-    return [
-      '<b>Настройки свопа</b>',
-      '',
-      `Slippage: <b>${settings.slippage}%</b>`,
-      `Агрегатор: <b>${aggregatorLabel}</b>`,
-    ].join('\n');
+    return buildSettingsMenuMessage(`${settings.slippage}`, aggregatorLabel);
   }
 
   private buildMainMenuKeyboard(): InlineKeyboardButton[][] {

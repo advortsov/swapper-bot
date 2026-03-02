@@ -78,6 +78,84 @@ describe('TelegramUpdateHandler', () => {
     );
   });
 
+  it('должен показывать подробный /help', async () => {
+    const registeredCommands = new Map<string, (context: unknown) => Promise<void>>();
+    const bot = {
+      command: vi.fn((name: string, handler: (context: unknown) => Promise<void>) => {
+        registeredCommands.set(name, handler);
+      }),
+      action: vi.fn(),
+      on: vi.fn(),
+    };
+    const settingsHandler = {
+      register: vi.fn(),
+      hasPendingInput: vi.fn().mockReturnValue(false),
+      handleTextInput: vi.fn(),
+    } as unknown as TelegramSettingsHandler;
+    const tradingService = {
+      handlePrice: vi.fn(),
+      handleSwap: vi.fn(),
+      isSwapCallback: vi.fn().mockReturnValue(false),
+      handleSwapCallback: vi.fn(),
+    } as unknown as TelegramTradingService;
+    const portfolioService = {
+      handleFavorites: vi.fn(),
+      handleHistory: vi.fn(),
+      handleAlertThresholdInput: vi.fn().mockResolvedValue(false),
+      isFavoriteAdd: vi.fn().mockReturnValue(false),
+      isFavoriteCheck: vi.fn().mockReturnValue(false),
+      isFavoriteAlert: vi.fn().mockReturnValue(false),
+      isFavoriteDelete: vi.fn().mockReturnValue(false),
+      handleFavoriteAdd: vi.fn(),
+      handleFavoriteCheck: vi.fn(),
+      handleFavoriteAlert: vi.fn(),
+      handleFavoriteDelete: vi.fn(),
+    } as unknown as TelegramPortfolioService;
+    const connectionsService = {
+      handleConnect: vi.fn(),
+      handleDisconnect: vi.fn(),
+      isConnectAction: vi.fn().mockReturnValue(false),
+      isDisconnectAction: vi.fn().mockReturnValue(false),
+      handleConnectAction: vi.fn(),
+      handleDisconnectAction: vi.fn(),
+    } as unknown as TelegramConnectionsService;
+    const handler = new TelegramUpdateHandler(
+      settingsHandler,
+      tradingService,
+      portfolioService,
+      connectionsService,
+    );
+
+    handler.register(bot as never);
+
+    const helpCommandHandler = registeredCommands.get('help');
+    const reply = vi.fn().mockResolvedValue(undefined);
+
+    await helpCommandHandler?.({
+      from: { id: 42, username: 'tester' },
+      message: { text: '/help' },
+      reply,
+    });
+
+    const messageText = (reply.mock.calls[0] as [string])[0];
+    const replyOptions = (reply.mock.calls[0] as [string, { parse_mode: string }])[1];
+
+    expect(messageText).toContain('ℹ️ <b>Справка по боту</b>');
+    expect(messageText).toContain(
+      '/price &lt;amount&gt; &lt;from&gt; to &lt;to&gt; [on &lt;chain&gt;]',
+    );
+    expect(messageText).toContain(
+      '/swap &lt;amount&gt; &lt;from&gt; to &lt;to&gt; [on &lt;chain&gt;]',
+    );
+    expect(messageText).toContain('/connect [on &lt;chain&gt;]');
+    expect(messageText).toContain('/disconnect [on &lt;chain&gt;]');
+    expect(messageText).toContain('/favorites');
+    expect(messageText).toContain('/history');
+    expect(messageText).toContain('/settings');
+    expect(messageText).toContain('<b>Поддерживаемые сети</b>');
+    expect(replyOptions.parse_mode).toBe('HTML');
+  });
+
   it('должен маршрутизировать swap callback в trading service', async () => {
     const registeredActions = new Map<string, (context: unknown) => Promise<void>>();
     const bot = {

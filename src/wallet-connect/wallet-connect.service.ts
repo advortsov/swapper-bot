@@ -370,9 +370,10 @@ export class WalletConnectService implements OnModuleInit {
       telegramBotToken: this.telegramBotToken,
       chatId: session.userId,
       text: [
-        'Кошелёк подключён.',
-        `Семейство: ${session.family === 'evm' ? 'EVM' : 'Solana'}`,
-        `Адрес: <code>${escapeWalletConnectHtml(walletAddress)}</code>`,
+        '👛 <b>Кошелёк подключён</b>',
+        '',
+        `🌐 Семейство: <code>${session.family === 'solana' ? 'Solana' : 'EVM'}</code>`,
+        `🆔 Адрес: <code>${escapeWalletConnectHtml(walletAddress)}</code>`,
       ].join('\n'),
       logger: this.logger,
     });
@@ -406,11 +407,12 @@ export class WalletConnectService implements OnModuleInit {
       telegramBotToken: this.telegramBotToken,
       chatId: session.userId,
       text: [
-        'Своп отправлен.',
-        `Сеть: ${swapPayload.chain}`,
-        `Агрегатор: ${swapPayload.aggregatorName}`,
-        `Tx: <code>${escapeWalletConnectHtml(transactionHash)}</code>`,
-        `<a href="${explorerUrl}">Открыть в эксплорере</a>`,
+        '✅ <b>Своп отправлен</b>',
+        '',
+        `🌐 Сеть: <code>${escapeWalletConnectHtml(swapPayload.chain)}</code>`,
+        `🏆 Агрегатор: <code>${escapeWalletConnectHtml(swapPayload.aggregatorName)}</code>`,
+        `🧾 Tx: <code>${escapeWalletConnectHtml(transactionHash)}</code>`,
+        `<a href="${escapeWalletConnectHtml(explorerUrl)}">Открыть в эксплорере</a>`,
       ].join('\n'),
       logger: this.logger,
     });
@@ -435,7 +437,7 @@ export class WalletConnectService implements OnModuleInit {
       await sendWalletConnectTelegramMessage({
         telegramBotToken: this.telegramBotToken,
         chatId: session.userId,
-        text: `Ошибка свопа: ${escapeWalletConnectHtml(message)}`,
+        text: `❌ <b>Ошибка:</b> ${escapeWalletConnectHtml(message)}`,
         logger: this.logger,
       });
       return;
@@ -444,7 +446,7 @@ export class WalletConnectService implements OnModuleInit {
     await sendWalletConnectTelegramMessage({
       telegramBotToken: this.telegramBotToken,
       chatId: session.userId,
-      text: `Ошибка подключения кошелька: ${escapeWalletConnectHtml(message)}`,
+      text: `❌ <b>Ошибка:</b> ${escapeWalletConnectHtml(message)}`,
       logger: this.logger,
     });
   }

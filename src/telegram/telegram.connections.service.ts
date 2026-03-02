@@ -2,6 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import QRCode from 'qrcode';
 import { Input, type Context } from 'telegraf';
 
+import {
+  buildConnectionSessionMessage,
+  buildConnectionStatusMessage,
+  buildDisconnectMessage,
+  buildPreparedSwapMessage,
+  buildQrCaption,
+  buildInfoMessage,
+} from './telegram.message-formatters';
 import { createDateTimeFormatter, formatLocalDateTime, formatSwapValidity } from './telegram.time';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { SUPPORTED_CHAINS } from '../chains/interfaces/chain.interface';
@@ -31,7 +39,8 @@ export class TelegramConnectionsService {
 
     if (!chain) {
       const status = this.walletConnectService.getConnectionStatus(userId);
-      await context.reply(this.buildConnectionStatusMessage(status), {
+      await context.reply(buildConnectionStatusMessage(status), {
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: this.buildConnectionButtons(status),
         },
@@ -42,7 +51,10 @@ export class TelegramConnectionsService {
     const session = await this.walletConnectService.connect({ userId, chain });
 
     if (!session.uri) {
-      await context.reply('Кошелёк уже подключён. Можно выполнять /swap без повторного connect.');
+      await context.reply(
+        buildInfoMessage('Кошелёк уже подключён. Можно выполнять /swap без повторного connect.'),
+        { parse_mode: 'HTML' },
+      );
       return;
     }
 
@@ -53,11 +65,7 @@ export class TelegramConnectionsService {
     const chain = this.parseDisconnectChain(text);
 
     await this.walletConnectService.disconnect(userId, chain ?? 'all');
-    await context.reply(
-      chain
-        ? `Подключение для ${this.toConnectionLabel(chain)} отключено.`
-        : 'Все локальные подключения отключены.',
-    );
+    await context.reply(buildDisconnectMessage(chain), { parse_mode: 'HTML' });
   }
 
   public async handleConnectAction(context: Context, userId: string, data: string): Promise<void> {
@@ -68,7 +76,7 @@ export class TelegramConnectionsService {
     const session = await this.walletConnectService.connect({ userId, chain });
 
     if (!session.uri) {
-      await context.reply('Кошелёк уже подключён.');
+      await context.reply(buildInfoMessage('Кошелёк уже подключён.'), { parse_mode: 'HTML' });
       return;
     }
 
@@ -85,12 +93,12 @@ export class TelegramConnectionsService {
 
     await context.answerCbQuery('Отключаю...');
     await this.walletConnectService.disconnect(userId, chain);
-    await context.reply(`Подключение для ${family === 'solana' ? 'Solana' : 'EVM'} отключено.`);
+    await context.reply(buildDisconnectMessage(chain), { parse_mode: 'HTML' });
   }
 
   public async replySwapSession(context: Context, session: ISwapSessionResponse): Promise<void> {
     if (session.walletDelivery === 'connected-wallet') {
-      await context.reply(this.buildPreparedSwapMessage(session));
+      await context.reply(this.buildPreparedSwapMessage(session), { parse_mode: 'HTML' });
       return;
     }
 
@@ -113,6 +121,7 @@ export class TelegramConnectionsService {
   private async replySolanaSession(context: Context, session: ISwapSessionResponse): Promise<void> {
     if (session.walletConnectUri) {
       await context.reply(this.buildPreparedSwapMessage(session), {
+        parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[{ text: 'Open in Phantom', url: session.walletConnectUri }]],
         },
@@ -120,30 +129,32 @@ export class TelegramConnectionsService {
       await this.sendQrCode(
         context,
         session.walletConnectUri,
-        [
-          'Отсканируй QR в Phantom для подписи.',
-          `Session ID: ${session.sessionId}`,
-          `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
-        ].join('\n'),
+        buildQrCaption(
+          'swap',
+          session.chain,
+          session.sessionId,
+          this.formatDate(session.expiresAt),
+        ),
       );
       return;
     }
 
-    await context.reply(this.buildPreparedSwapMessage(session));
+    await context.reply(this.buildPreparedSwapMessage(session), { parse_mode: 'HTML' });
   }
 
   private async replyEvmSession(context: Context, session: ISwapSessionResponse): Promise<void> {
-    await context.reply(this.buildPreparedSwapMessage(session));
+    await context.reply(this.buildPreparedSwapMessage(session), { parse_mode: 'HTML' });
 
     if (session.walletConnectUri) {
       await this.sendQrCode(
         context,
         session.walletConnectUri,
-        [
-          'Отсканируй QR в MetaMask или Trust Wallet для подключения.',
-          `Session ID: ${session.sessionId}`,
-          `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
-        ].join('\n'),
+        buildQrCaption(
+          'swap',
+          session.chain,
+          session.sessionId,
+          this.formatDate(session.expiresAt),
+        ),
       );
     }
   }
@@ -159,26 +170,21 @@ export class TelegramConnectionsService {
     }
 
     await context.reply(
-      [
-        chain === 'solana' ? 'Подключение Phantom' : 'Подключение кошелька',
-        `Session ID: ${session.sessionId}`,
-        `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
-      ].join('\n'),
+      buildConnectionSessionMessage(chain, session.sessionId, this.formatDate(session.expiresAt)),
       chain === 'solana'
         ? {
+            parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [[{ text: 'Open in Phantom', url: session.uri }]],
             },
           }
-        : undefined,
+        : { parse_mode: 'HTML' },
     );
 
     await this.sendQrCode(
       context,
       session.uri,
-      chain === 'solana'
-        ? 'Отсканируй QR в Phantom для подключения.'
-        : 'Отсканируй QR в MetaMask или Trust Wallet для подключения.',
+      buildQrCaption('connect', chain, session.sessionId, this.formatDate(session.expiresAt)),
     );
   }
 
@@ -188,30 +194,13 @@ export class TelegramConnectionsService {
         ? 'Запрос на подпись отправлен в уже подключённый кошелёк.'
         : this.getConnectionHint(session.chain);
 
-    return [
-      'Своп подготовлен.',
-      `Сеть: ${session.chain}`,
-      `Выбранный агрегатор: ${session.aggregator}`,
-      `Gross: ${session.grossToAmount} ${session.toSymbol}`,
-      `Комиссия бота: ${session.feeAmount} ${session.feeAmountSymbol ?? session.toSymbol} (${session.feeBps} bps, ${session.feeDisplayLabel})`,
-      `Net: ${session.toAmount} ${session.toSymbol}`,
-      `Session ID: ${session.sessionId}`,
-      `Сессия истекает: ${this.formatDate(session.expiresAt)}`,
-      `Срок актуальности свопа: ${formatSwapValidity(session.quoteExpiresAt)}`,
-      `Котировка актуальна до: ${this.formatDate(session.quoteExpiresAt)}`,
-      'Итоговая транзакция уже собрана с учётом комиссии бота.',
+    return buildPreparedSwapMessage({
+      session,
+      expiresAtText: this.formatDate(session.expiresAt),
+      quoteExpiresAtText: this.formatDate(session.quoteExpiresAt),
+      swapValidityText: formatSwapValidity(session.quoteExpiresAt),
       deliveryHint,
-    ].join('\n');
-  }
-
-  private buildConnectionStatusMessage(
-    status: ReturnType<WalletConnectService['getConnectionStatus']>,
-  ): string {
-    return [
-      'Текущий статус подключений:',
-      `EVM: ${status.evm?.address ?? 'не подключён'}`,
-      `Solana: ${status.solana?.address ?? 'не подключён'}`,
-    ].join('\n');
+    });
   }
 
   private buildConnectionButtons(
@@ -271,15 +260,12 @@ export class TelegramConnectionsService {
 
     await context.replyWithPhoto(Input.fromBuffer(qrCodeBuffer), {
       caption,
+      parse_mode: 'HTML',
     });
   }
 
   private formatDate(value: string): string {
     return formatLocalDateTime(value, this.dateTimeFormatter);
-  }
-
-  private toConnectionLabel(chain: ChainType): string {
-    return chain === 'solana' ? 'Solana' : 'EVM';
   }
 
   private getConnectionHint(chain: ChainType): string {
