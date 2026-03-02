@@ -101,9 +101,10 @@ export class PriceQuoteService {
       throw new BusinessException('Failed to get quotes from all aggregators');
     }
 
-    const bestQuote = [...quotes].sort((leftQuote, rightQuote) =>
+    const sortedQuotes = [...quotes].sort((leftQuote, rightQuote) =>
       this.compareQuotes(leftQuote, rightQuote),
-    )[0];
+    );
+    const bestQuote = sortedQuotes[0];
 
     if (!bestQuote) {
       throw new BusinessException('Best quote is not available');
@@ -111,7 +112,7 @@ export class PriceQuoteService {
 
     return {
       bestQuote,
-      successfulQuotes: quotes,
+      successfulQuotes: sortedQuotes,
       providersPolled: aggregatorsToQuery.length,
     };
   }

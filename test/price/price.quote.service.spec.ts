@@ -117,6 +117,19 @@ function createFakeChain(name: ChainType): IChain {
 function createService(
   aggregators: readonly IAggregator[],
   chains: readonly IChain[] = DEFAULT_CHAINS,
+  feePolicyResolver: (aggregatorName: string, chain: ChainType) => IFeePolicy = (
+    aggregatorName: string,
+    chain: ChainType,
+  ) => ({
+    aggregatorName,
+    chain,
+    mode: 'disabled',
+    feeType: 'no fee',
+    feeBps: 0,
+    displayLabel: 'no fee',
+    isEnabled: false,
+    executionFee: createDisabledFeeConfig(aggregatorName, chain),
+  }),
 ): PriceQuoteService {
   const tokensService: Pick<TokensService, 'getTokenBySymbol'> = {
     getTokenBySymbol: async (symbol: string, chain: ChainType): Promise<ITokenRecord> => {
@@ -129,16 +142,7 @@ function createService(
   };
 
   const feePolicyService = {
-    getPolicy: (aggregatorName: string, chain: ChainType): IFeePolicy => ({
-      aggregatorName,
-      chain,
-      mode: 'disabled',
-      feeType: 'no fee',
-      feeBps: 0,
-      displayLabel: 'no fee',
-      isEnabled: false,
-      executionFee: createDisabledFeeConfig(aggregatorName, chain),
-    }),
+    getPolicy: feePolicyResolver,
   };
   const quoteMonetizationService = new QuoteMonetizationService(
     {
@@ -178,6 +182,69 @@ describe('PriceQuoteService', () => {
     expect(selection.successfulQuotes).toHaveLength(2);
     expect(zeroX.calls).toBe(1);
     expect(paraSwap.calls).toBe(1);
+  });
+
+  it('должен ранжировать котировки по net output после применения fee', async () => {
+    const zeroX = new FakeAggregator({
+      name: '0x',
+      toAmountBaseUnits: '10100000',
+    });
+    const paraSwap = new FakeAggregator({
+      name: 'paraswap',
+      toAmountBaseUnits: '10050000',
+    });
+    const service = createService(
+      [zeroX, paraSwap],
+      DEFAULT_CHAINS,
+      (aggregatorName: string, chain: ChainType): IFeePolicy => {
+        if (aggregatorName === '0x') {
+          return {
+            aggregatorName,
+            chain,
+            mode: 'enforced',
+            feeType: 'native fee',
+            feeBps: 100,
+            displayLabel: 'native fee',
+            isEnabled: true,
+            executionFee: {
+              kind: 'zerox',
+              aggregatorName,
+              chain,
+              mode: 'enforced',
+              feeType: 'native fee',
+              feeBps: 100,
+              feeAssetSide: 'buy',
+              feeAssetAddress: TO_TOKEN.address,
+              feeAssetSymbol: TO_TOKEN.symbol,
+              feeAppliedAtQuote: true,
+              feeEnforcedOnExecution: true,
+              feeRecipient: '0x1111111111111111111111111111111111111111',
+              feeTokenAddress: TO_TOKEN.address,
+            },
+          };
+        }
+
+        return {
+          aggregatorName,
+          chain,
+          mode: 'disabled',
+          feeType: 'no fee',
+          feeBps: 0,
+          displayLabel: 'no fee',
+          isEnabled: false,
+          executionFee: createDisabledFeeConfig(aggregatorName, chain),
+        };
+      },
+    );
+
+    const preparedInput = await service.prepare(priceRequest);
+    const selection = await service.fetchQuoteSelection(preparedInput);
+
+    expect(selection.bestQuote.aggregatorName).toBe('paraswap');
+    expect(selection.successfulQuotes[0]?.aggregatorName).toBe('paraswap');
+    expect(selection.successfulQuotes[1]?.aggregatorName).toBe('0x');
+    expect(selection.successfulQuotes[0]?.toAmountBaseUnits).toBe('10050000');
+    expect(selection.successfulQuotes[1]?.toAmountBaseUnits).toBe('9999000');
   });
 
   it('должен учитывать сеть в cache key и запросе к агрегатору', async () => {
