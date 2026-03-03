@@ -24,6 +24,9 @@ const CONNECT_DROP_PREFIX = 'conn:drop:';
 const QR_CODE_WIDTH = 512;
 const QR_CODE_MARGIN = 2;
 const SUPPORTED_CHAIN_SET = new Set<ChainType>(SUPPORTED_CHAINS);
+const METAMASK_UNIVERSAL_LINK = 'https://link.metamask.io/wc?uri=';
+const METAMASK_LEGACY_LINK = 'https://metamask.app.link/wc?uri=';
+const TRUST_WALLET_UNIVERSAL_LINK = 'https://link.trustwallet.com/wc?uri=';
 
 @Injectable()
 export class TelegramConnectionsService {
@@ -143,9 +146,30 @@ export class TelegramConnectionsService {
   }
 
   private async replyEvmSession(context: Context, session: ISwapSessionResponse): Promise<void> {
-    await context.reply(this.buildPreparedSwapMessage(session), { parse_mode: 'HTML' });
-
     if (session.walletConnectUri) {
+      await context.reply(this.buildPreparedSwapMessage(session), {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: 'Open in MetaMask',
+                url: `${METAMASK_UNIVERSAL_LINK}${encodeURIComponent(session.walletConnectUri)}`,
+              },
+              {
+                text: 'Open in Trust Wallet',
+                url: `${TRUST_WALLET_UNIVERSAL_LINK}${encodeURIComponent(session.walletConnectUri)}`,
+              },
+            ],
+            [
+              {
+                text: 'MetaMask (legacy link)',
+                url: `${METAMASK_LEGACY_LINK}${encodeURIComponent(session.walletConnectUri)}`,
+              },
+            ],
+          ],
+        },
+      });
       await this.sendQrCode(
         context,
         session.walletConnectUri,
@@ -156,7 +180,10 @@ export class TelegramConnectionsService {
           this.formatDate(session.expiresAt),
         ),
       );
+      return;
     }
+
+    await context.reply(this.buildPreparedSwapMessage(session), { parse_mode: 'HTML' });
   }
 
   private async replyConnectionSession(
