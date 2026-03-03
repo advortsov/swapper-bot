@@ -40,3 +40,5 @@ target/
 .claude.json
 /graph.png
 /madge-report.json
+
+/.claude/
