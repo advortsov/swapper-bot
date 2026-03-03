@@ -1,0 +1,224 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Price Requests",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(increase(price_requests_total{job=\"swapper-bot\"}[$__range]))", "refId": "A" } ]
+    },
+    {
+      "id": 2,
+      "title": "Swap Initiated",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(increase(swap_requests_total{job=\"swapper-bot\",status=\"initiated\"}[$__range]))", "refId": "A" } ]
+    },
+    {
+      "id": 3,
+      "title": "Swap Success",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "orange", "value": 0 }, { "color": "green", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(increase(swap_requests_total{job=\"swapper-bot\",status=\"success\"}[$__range]))", "refId": "A" } ]
+    },
+    {
+      "id": 4,
+      "title": "Swap Errors",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 15, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "orange", "value": 1 }, { "color": "red", "value": 10 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(increase(swap_requests_total{job=\"swapper-bot\",status=\"error\"}[$__range]))", "refId": "A" } ]
+    },
+    {
+      "id": 5,
+      "title": "Swap Conversion",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 0 }, { "color": "orange", "value": 0.2 }, { "color": "green", "value": 0.5 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [
+        {
+          "expr": "sum(increase(swap_requests_total{job=\"swapper-bot\",status=\"success\"}[$__range])) / clamp_min(sum(increase(swap_requests_total{job=\"swapper-bot\",status=\"initiated\"}[$__range])), 1)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Price vs Swap Rate",
+      "description": "Top of funnel activity",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(price_requests_total{job=\"swapper-bot\"}[$__rate_interval]))", "legendFormat": "price", "refId": "A" },
+        { "expr": "sum(rate(swap_requests_total{job=\"swapper-bot\",status=\"initiated\"}[$__rate_interval]))", "legendFormat": "swap initiated", "refId": "B" },
+        { "expr": "sum(rate(swap_requests_total{job=\"swapper-bot\",status=\"success\"}[$__rate_interval]))", "legendFormat": "swap success", "refId": "C" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Swap Status Rate",
+      "description": "Execution funnel by status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 12 } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum by (status) (rate(swap_requests_total{job=\"swapper-bot\"}[$__rate_interval]))", "legendFormat": "{{status}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Quote Mix by Aggregator",
+      "description": "How often each aggregator wins or participates in monetized quotes",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true },
+      "targets": [
+        { "expr": "sum by (aggregator) (increase(swap_fee_quotes_total{job=\"swapper-bot\"}[$__range]))", "legendFormat": "{{aggregator}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Execution Outcomes by Aggregator",
+      "description": "Success vs error by aggregator",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true },
+      "targets": [
+        { "expr": "sum by (aggregator, status) (increase(swap_fee_executions_total{job=\"swapper-bot\"}[$__range]))", "legendFormat": "{{aggregator}} {{status}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Expected Fee Amount",
+      "description": "Projected monetization from selected quotes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum by (aggregator, token) (increase(swap_fee_expected_amount_total{job=\"swapper-bot\"}[$__range]))", "legendFormat": "{{aggregator}} {{token}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Fee Mode Distribution",
+      "description": "Native/partner/no-fee quote distribution",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true },
+      "targets": [
+        { "expr": "sum by (aggregator, fee_mode) (increase(swap_fee_quotes_total{job=\"swapper-bot\"}[$__range]))", "legendFormat": "{{aggregator}} {{fee_mode}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Missing Fee Configuration",
+      "description": "Where monetization could not be applied",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 29 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true },
+      "targets": [
+        { "expr": "sum by (aggregator, chain) (increase(swap_fee_missing_configuration_total{job=\"swapper-bot\"}[$__range]))", "legendFormat": "{{aggregator}} {{chain}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "External API Error Rate",
+      "description": "Provider failures by HTTP status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 29 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2, "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum by (provider, status_code) (rate(http_requests_total{job=\"swapper-bot\",status_code!~\"2..\"}[$__rate_interval]))", "legendFormat": "{{provider}} {{status_code}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Application Errors by Type",
+      "description": "Top business and integration errors",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 29 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "displayMode": "gradient", "orientation": "horizontal", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showUnfilled": true },
+      "targets": [
+        { "expr": "sum by (type) (increase(errors_total{job=\"swapper-bot\"}[$__range]))", "legendFormat": "{{type}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Swap Intent Guardrail Counters",
+      "description": "Expired and invalid intent activity",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 37 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "lineWidth": 2, "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "increase(swap_intent_invalid_callback_total{job=\"swapper-bot\"}[$__range])", "legendFormat": "invalid callback", "refId": "A" },
+        { "expr": "increase(swap_intent_expired_total{job=\"swapper-bot\"}[$__range])", "legendFormat": "expired", "refId": "B" }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["swapper-bot", "business", "prometheus"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Swapper Bot Business",
+  "uid": "swapper-bot-business",
+  "version": 1,
+  "weekStart": ""
+}
