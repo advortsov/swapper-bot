@@ -93,7 +93,7 @@ npm run build
 - `0x`: задать `ZEROX_FEE_RECIPIENT`, `ZEROX_FEE_BPS`, при необходимости `ZEROX_FEE_TOKEN_MODE`.
 - `ParaSwap`: задать `PARASWAP_PARTNER_ADDRESS`, `PARASWAP_FEE_BPS`, `PARASWAP_API_VERSION=6.2`.
 - `Jupiter`: задать `JUPITER_PLATFORM_FEE_BPS` и заранее созданные `JUPITER_FEE_ACCOUNT_<SYMBOL>`.
-- `Odos`: на текущем этапе оставить `ODOS_MONETIZATION_MODE=disabled` или `tracking_only`.
+- `Odos`: задать `ODOS_MONETIZATION_MODE=enforced`, `ODOS_REFERRAL_CODE` и при необходимости ограничить rollout через `ODOS_MONETIZED_CHAINS`.
 - Приложение валидирует эти связки на старте и падает fail-fast, если fee включён без обязательных реквизитов.
 
 ## Production (VPS + shared PostgreSQL)

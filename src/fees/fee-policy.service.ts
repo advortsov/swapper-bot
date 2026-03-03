@@ -17,8 +17,10 @@ const DISPLAY_LABEL_NATIVE = 'native fee';
 const DISPLAY_LABEL_PARTNER = 'partner fee';
 const DISPLAY_LABEL_NONE = 'no fee';
 const SUPPORTED_JUPITER_FEE_SYMBOLS = ['SOL', 'USDC', 'USDT', 'JUP', 'BONK'] as const;
+const ODOS_MONETIZABLE_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
 
 type IJupiterFeeSymbol = (typeof SUPPORTED_JUPITER_FEE_SYMBOLS)[number];
+type IOdosChain = (typeof ODOS_MONETIZABLE_CHAINS)[number];
 
 @Injectable()
 export class FeePolicyService {
@@ -38,7 +40,7 @@ export class FeePolicyService {
       case 'jupiter':
         return this.getJupiterPolicy(chain, fromToken, toToken);
       case 'odos':
-        return this.getOdosPolicy(chain);
+        return this.getOdosPolicy(chain, toToken);
       default:
         return this.getDisabledPolicy(aggregatorName, chain);
     }
@@ -166,8 +168,47 @@ export class FeePolicyService {
     return this.getDisabledPolicy('jupiter', chain);
   }
 
-  private getOdosPolicy(chain: ChainType): IFeePolicy {
+  private getOdosPolicy(chain: ChainType, toToken: ITokenRecord): IFeePolicy {
     const configuredMode = this.getOptionalTrimmed('ODOS_MONETIZATION_MODE') ?? DEFAULT_ODOS_MODE;
+
+    if (configuredMode === 'enforced') {
+      const referralCode = this.getOptionalPositiveInteger('ODOS_REFERRAL_CODE');
+
+      if (
+        chain === 'solana' ||
+        referralCode === null ||
+        !this.isOdosMonetizedChain(chain) ||
+        !this.isOdosChainEnabled(chain)
+      ) {
+        return this.getDisabledPolicy('odos', chain);
+      }
+
+      const executionFee: IExecutionFeeConfig = {
+        kind: 'odos',
+        aggregatorName: 'odos',
+        chain,
+        mode: 'enforced',
+        feeType: FEE_TYPE_PARTNER,
+        feeBps: ZERO_BPS,
+        feeAssetSide: 'buy',
+        feeAssetAddress: toToken.address,
+        feeAssetSymbol: toToken.symbol,
+        feeAppliedAtQuote: true,
+        feeEnforcedOnExecution: true,
+        referralCode,
+      };
+
+      return {
+        aggregatorName: 'odos',
+        chain,
+        mode: 'enforced',
+        feeType: FEE_TYPE_PARTNER,
+        feeBps: ZERO_BPS,
+        displayLabel: DISPLAY_LABEL_PARTNER,
+        isEnabled: true,
+        executionFee,
+      };
+    }
 
     if (configuredMode === 'tracking_only') {
       const executionFee: IExecutionFeeConfig = {
@@ -274,6 +315,29 @@ export class FeePolicyService {
     return SUPPORTED_JUPITER_FEE_SYMBOLS.includes(symbol.toUpperCase() as IJupiterFeeSymbol);
   }
 
+  private isOdosMonetizedChain(chain: ChainType): chain is IOdosChain {
+    return ODOS_MONETIZABLE_CHAINS.includes(chain as IOdosChain);
+  }
+
+  private isOdosChainEnabled(chain: IOdosChain): boolean {
+    const rawChains = this.getOptionalTrimmed('ODOS_MONETIZED_CHAINS');
+
+    if (rawChains === null) {
+      return true;
+    }
+
+    const enabledChains = rawChains
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item !== '');
+
+    if (enabledChains.length === 0) {
+      return true;
+    }
+
+    return enabledChains.includes(chain);
+  }
+
   private getOptionalTrimmed(key: string): string | null {
     const value = this.configService.get<string>(key);
 
@@ -282,6 +346,22 @@ export class FeePolicyService {
     }
 
     return value.trim();
+  }
+
+  private getOptionalPositiveInteger(key: string): number | null {
+    const value = this.getOptionalTrimmed(key);
+
+    if (value === null) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(value, 10);
+
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return null;
+    }
+
+    return parsed;
   }
 
   private getOptionalBps(key: string, maxValue: number): number {

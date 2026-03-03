@@ -9,6 +9,16 @@ import type { ITokenRecord } from '../tokens/tokens.repository';
 const BPS_DENOMINATOR = 10_000n;
 const ZERO_BIGINT = 0n;
 
+interface IResolvedFeeDetails {
+  feeBps: number;
+  feeMode: IQuoteResponse['feeMode'];
+  feeType: IQuoteResponse['feeType'];
+  feeDisplayLabel: string;
+  feeAppliedAtQuote: boolean;
+  feeEnforcedOnExecution: boolean;
+  feeAssetSide: IQuoteResponse['feeAssetSide'];
+}
+
 @Injectable()
 export class QuoteMonetizationService {
   public constructor(
@@ -34,6 +44,7 @@ export class QuoteMonetizationService {
   }): IQuoteResponse {
     const { rawQuote, feePolicy, fromToken, toToken, sellAmountBaseUnits } = input;
     const hasProviderFeeBreakdown = this.hasProviderFeeBreakdown(rawQuote, feePolicy);
+    const effectiveFee = this.resolveFeeDetails(rawQuote, feePolicy, hasProviderFeeBreakdown);
     const feeAmountBaseUnits = hasProviderFeeBreakdown
       ? rawQuote.feeAmountBaseUnits
       : this.calculateFeeAmount(
@@ -53,12 +64,12 @@ export class QuoteMonetizationService {
         ? this.subtractFee(grossToAmountBaseUnits, feeAmountBaseUnits)
         : grossToAmountBaseUnits;
     const feeAmountSymbol = this.resolveFeeAmountSymbol(
-      feePolicy.executionFee.feeAssetSide,
+      effectiveFee.feeAssetSide,
       fromToken,
       toToken,
     );
     const feeAmountDecimals = this.resolveFeeAmountDecimals(
-      feePolicy.executionFee.feeAssetSide,
+      effectiveFee.feeAssetSide,
       fromToken,
       toToken,
     );
@@ -69,13 +80,13 @@ export class QuoteMonetizationService {
       feeAmountBaseUnits,
       feeAmountSymbol,
       feeAmountDecimals,
-      feeBps: feePolicy.feeBps,
-      feeMode: feePolicy.mode,
-      feeType: feePolicy.feeType,
-      feeDisplayLabel: feePolicy.displayLabel,
-      feeAppliedAtQuote: feePolicy.executionFee.feeAppliedAtQuote,
-      feeEnforcedOnExecution: feePolicy.executionFee.feeEnforcedOnExecution,
-      feeAssetSide: feePolicy.executionFee.feeAssetSide,
+      feeBps: effectiveFee.feeBps,
+      feeMode: effectiveFee.feeMode,
+      feeType: effectiveFee.feeType,
+      feeDisplayLabel: effectiveFee.feeDisplayLabel,
+      feeAppliedAtQuote: effectiveFee.feeAppliedAtQuote,
+      feeEnforcedOnExecution: effectiveFee.feeEnforcedOnExecution,
+      feeAssetSide: effectiveFee.feeAssetSide,
       executionFee: feePolicy.executionFee,
     };
 
@@ -106,6 +117,34 @@ export class QuoteMonetizationService {
       feePolicy.executionFee.feeAppliedAtQuote &&
       BigInt(rawQuote.feeAmountBaseUnits) > ZERO_BIGINT
     );
+  }
+
+  private resolveFeeDetails(
+    rawQuote: IQuoteResponse,
+    feePolicy: IFeePolicy,
+    hasProviderFeeBreakdown: boolean,
+  ): IResolvedFeeDetails {
+    if (!hasProviderFeeBreakdown) {
+      return {
+        feeBps: feePolicy.feeBps,
+        feeMode: feePolicy.mode,
+        feeType: feePolicy.feeType,
+        feeDisplayLabel: feePolicy.displayLabel,
+        feeAppliedAtQuote: feePolicy.executionFee.feeAppliedAtQuote,
+        feeEnforcedOnExecution: feePolicy.executionFee.feeEnforcedOnExecution,
+        feeAssetSide: feePolicy.executionFee.feeAssetSide,
+      };
+    }
+
+    return {
+      feeBps: rawQuote.feeBps > 0 ? rawQuote.feeBps : feePolicy.feeBps,
+      feeMode: rawQuote.feeMode,
+      feeType: rawQuote.feeType,
+      feeDisplayLabel: rawQuote.feeDisplayLabel,
+      feeAppliedAtQuote: rawQuote.feeAppliedAtQuote,
+      feeEnforcedOnExecution: rawQuote.feeEnforcedOnExecution,
+      feeAssetSide: rawQuote.feeAssetSide,
+    };
   }
 
   private resolveGrossToAmountBaseUnits(

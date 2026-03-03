@@ -32,6 +32,9 @@ const HEALTHCHECK_BUY_TOKEN = '0xdac17f958d2ee523a2206206994597c13d831ec7';
 const HEALTHCHECK_SELL_AMOUNT = '10000000';
 const REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_SLIPPAGE_PERCENT = 0.5;
+const PERCENT_TO_BPS_MULTIPLIER = 100;
+const ZERO_FEE_BPS = 0;
+const ZERO_BIGINT = 0n;
 
 interface IOdosQuoteToken {
   tokenAddress: string;
@@ -46,12 +49,14 @@ interface IOdosQuoteRequest {
   userAddr: string;
   disableRFQs: boolean;
   compact: boolean;
+  referralCode?: number;
 }
 
 interface IOdosQuoteResponse {
   outAmounts: readonly string[];
   pathId: string;
   gasEstimateValue?: number;
+  partnerFeePercent?: number;
 }
 
 interface IOdosAssembleRequest {
@@ -136,38 +141,35 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
     const startedAt = Date.now();
 
     try {
-      const response = await this.postJson(new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl), payload);
-      this.observeRequest('POST', response.statusCode.toString(), startedAt);
+      if (params.feeConfig.kind !== 'odos' || params.feeConfig.mode !== 'enforced') {
+        const response = await this.postJson(
+          new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl),
+          payload,
+        );
+        this.observeRequest('POST', response.statusCode.toString(), startedAt);
 
-      if (!isOdosQuoteResponse(response.body)) {
-        throw new BusinessException('Odos quote response schema is invalid');
+        return this.createDisabledQuoteResponse(params, response.body);
       }
 
-      const quoteAmount = response.body.outAmounts[0];
-
-      if (quoteAmount === undefined || quoteAmount.trim() === '') {
-        throw new BusinessException('Odos quote amount is missing');
-      }
-
-      return {
-        aggregatorName: this.name,
-        toAmountBaseUnits: quoteAmount,
-        grossToAmountBaseUnits: quoteAmount,
-        feeAmountBaseUnits: '0',
-        feeAmountSymbol: null,
-        feeAmountDecimals: null,
-        feeBps: 0,
-        feeMode: 'disabled',
-        feeType: 'no fee',
-        feeDisplayLabel: 'no fee',
-        feeAppliedAtQuote: false,
-        feeEnforcedOnExecution: false,
-        feeAssetSide: 'none',
-        executionFee: params.feeConfig,
-        estimatedGasUsd: response.body.gasEstimateValue ?? null,
-        totalNetworkFeeWei: null,
-        rawQuote: response.body,
+      const feeQuotePayload = {
+        ...payload,
+        referralCode: params.feeConfig.referralCode,
       };
+      const feeQuoteResponse = await this.postJson(
+        new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl),
+        feeQuotePayload,
+      );
+      const shadowQuoteResponse = await this.postJson(
+        new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl),
+        payload,
+      );
+      this.observeRequest('POST', shadowQuoteResponse.statusCode.toString(), startedAt);
+
+      return this.createMonetizedQuoteResponse({
+        params,
+        feeQuoteBody: feeQuoteResponse.body,
+        shadowQuoteBody: shadowQuoteResponse.body,
+      });
     } catch (error: unknown) {
       this.observeRequest('POST', '500', startedAt);
       throw error;
@@ -182,6 +184,9 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
       sellAmountBaseUnits: params.sellAmountBaseUnits,
       userAddress: params.fromAddress,
       slippageLimitPercent: params.slippagePercentage,
+      ...(params.feeConfig.kind === 'odos' && params.feeConfig.mode === 'enforced'
+        ? { referralCode: params.feeConfig.referralCode }
+        : {}),
     });
     const startedAt = Date.now();
 
@@ -193,6 +198,10 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
 
       if (!isOdosQuoteResponse(quoteResponse.body)) {
         throw new BusinessException('Odos quote response schema is invalid');
+      }
+
+      if (params.feeConfig.kind === 'odos' && params.feeConfig.mode === 'enforced') {
+        this.getValidatedPartnerFeePercent(quoteResponse.body);
       }
 
       if (quoteResponse.body.pathId.trim() === '') {
@@ -252,6 +261,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
     sellAmountBaseUnits: string;
     userAddress: string;
     slippageLimitPercent: number;
+    referralCode?: number;
   }): IOdosQuoteRequest {
     return {
       chainId: this.resolveChainId(input.chain),
@@ -271,7 +281,125 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
       userAddr: input.userAddress,
       disableRFQs: true,
       compact: true,
+      ...(input.referralCode !== undefined ? { referralCode: input.referralCode } : {}),
     };
+  }
+
+  private createDisabledQuoteResponse(
+    params: IQuoteRequest,
+    responseBody: unknown,
+  ): IQuoteResponse {
+    if (!isOdosQuoteResponse(responseBody)) {
+      throw new BusinessException('Odos quote response schema is invalid');
+    }
+
+    const quoteAmount = responseBody.outAmounts[0];
+
+    if (quoteAmount === undefined || quoteAmount.trim() === '') {
+      throw new BusinessException('Odos quote amount is missing');
+    }
+
+    return {
+      aggregatorName: this.name,
+      toAmountBaseUnits: quoteAmount,
+      grossToAmountBaseUnits: quoteAmount,
+      feeAmountBaseUnits: '0',
+      feeAmountSymbol: null,
+      feeAmountDecimals: null,
+      feeBps: ZERO_FEE_BPS,
+      feeMode: 'disabled',
+      feeType: 'no fee',
+      feeDisplayLabel: 'no fee',
+      feeAppliedAtQuote: false,
+      feeEnforcedOnExecution: false,
+      feeAssetSide: 'none',
+      executionFee: params.feeConfig,
+      estimatedGasUsd: responseBody.gasEstimateValue ?? null,
+      totalNetworkFeeWei: null,
+      rawQuote: responseBody,
+    };
+  }
+
+  private createMonetizedQuoteResponse(input: {
+    params: IQuoteRequest;
+    feeQuoteBody: unknown;
+    shadowQuoteBody: unknown;
+  }): IQuoteResponse {
+    if (!isOdosQuoteResponse(input.feeQuoteBody)) {
+      throw new BusinessException('Odos quote response schema is invalid');
+    }
+
+    if (!isOdosQuoteResponse(input.shadowQuoteBody)) {
+      this.metricsService.incrementError('odos_referral_shadow_quote_failed');
+      throw new BusinessException('Odos shadow quote response schema is invalid');
+    }
+
+    const netToAmountBaseUnits = this.getQuoteAmount(input.feeQuoteBody);
+    const grossToAmountBaseUnits = this.getQuoteAmount(input.shadowQuoteBody);
+    const partnerFeePercent = this.getValidatedPartnerFeePercent(input.feeQuoteBody);
+    const feeAmountBaseUnits = (
+      BigInt(grossToAmountBaseUnits) - BigInt(netToAmountBaseUnits)
+    ).toString();
+
+    if (BigInt(grossToAmountBaseUnits) < BigInt(netToAmountBaseUnits)) {
+      this.metricsService.incrementError('odos_referral_negative_fee_breakdown');
+      throw new BusinessException('Odos quote fee breakdown is inconsistent');
+    }
+
+    if (BigInt(feeAmountBaseUnits) <= ZERO_BIGINT) {
+      this.metricsService.incrementError('odos_referral_negative_fee_breakdown');
+      throw new BusinessException('Odos quote fee breakdown is inconsistent');
+    }
+
+    return {
+      aggregatorName: this.name,
+      toAmountBaseUnits: netToAmountBaseUnits,
+      grossToAmountBaseUnits,
+      feeAmountBaseUnits,
+      feeAmountSymbol: null,
+      feeAmountDecimals: null,
+      feeBps: Math.round(partnerFeePercent * PERCENT_TO_BPS_MULTIPLIER),
+      feeMode: 'enforced',
+      feeType: 'partner fee',
+      feeDisplayLabel: 'partner fee',
+      feeAppliedAtQuote: true,
+      feeEnforcedOnExecution: true,
+      feeAssetSide: 'buy',
+      executionFee: input.params.feeConfig,
+      estimatedGasUsd: input.feeQuoteBody.gasEstimateValue ?? null,
+      totalNetworkFeeWei: null,
+      rawQuote: {
+        feeQuote: input.feeQuoteBody,
+        shadowQuote: input.shadowQuoteBody,
+        referralCode:
+          input.params.feeConfig.kind === 'odos' ? input.params.feeConfig.referralCode : null,
+        partnerFeePercent,
+      },
+    };
+  }
+
+  private getQuoteAmount(responseBody: IOdosQuoteResponse): string {
+    const quoteAmount = responseBody.outAmounts[0];
+
+    if (quoteAmount === undefined || quoteAmount.trim() === '') {
+      throw new BusinessException('Odos quote amount is missing');
+    }
+
+    return quoteAmount;
+  }
+
+  private getValidatedPartnerFeePercent(responseBody: IOdosQuoteResponse): number {
+    if (responseBody.partnerFeePercent === undefined) {
+      this.metricsService.incrementError('odos_referral_missing_partner_fee_percent');
+      throw new BusinessException('Odos quote does not contain partnerFeePercent');
+    }
+
+    if (!Number.isFinite(responseBody.partnerFeePercent) || responseBody.partnerFeePercent <= 0) {
+      this.metricsService.incrementError('odos_referral_zero_partner_fee');
+      throw new BusinessException('Odos referral code is active but partner fee is zero');
+    }
+
+    return responseBody.partnerFeePercent;
   }
 
   private normalizeTokenAddress(address: string): string {

@@ -197,4 +197,74 @@ describe('QuoteMonetizationService', () => {
     expect(monetized.feeAmountBaseUnits).toBe('10000');
     expect(monetized.toAmountBaseUnits).toBe('990000');
   });
+
+  it('должен сохранять provider-derived feeBps и label для Odos', () => {
+    const service = new QuoteMonetizationService(
+      {
+        incrementSwapFeeQuote: vi.fn(),
+        addExpectedFeeAmount: vi.fn(),
+        incrementSwapFeeMissingConfiguration: vi.fn(),
+      } as never,
+      {
+        getPolicy: vi.fn(),
+      } as never,
+    );
+    const quote = {
+      ...createQuoteResponse({
+        aggregatorName: 'odos',
+        chain: 'ethereum',
+        toAmountBaseUnits: '998000',
+        estimatedGasUsd: null,
+      }),
+      grossToAmountBaseUnits: '1000000',
+      feeAmountBaseUnits: '2000',
+      feeBps: 20,
+      feeMode: 'enforced' as const,
+      feeType: 'partner fee' as const,
+      feeDisplayLabel: 'partner fee',
+      feeAppliedAtQuote: true,
+      feeEnforcedOnExecution: true,
+      feeAssetSide: 'buy' as const,
+      rawQuote: {
+        partnerFeePercent: 0.2,
+      },
+    };
+
+    const monetized = service.applyPolicy({
+      rawQuote: quote,
+      feePolicy: {
+        aggregatorName: 'odos',
+        chain: 'ethereum',
+        mode: 'enforced',
+        feeType: 'partner fee',
+        feeBps: 0,
+        displayLabel: 'partner fee',
+        isEnabled: true,
+        executionFee: {
+          kind: 'odos',
+          aggregatorName: 'odos',
+          chain: 'ethereum',
+          mode: 'enforced',
+          feeType: 'partner fee',
+          feeBps: 0,
+          feeAssetSide: 'buy',
+          feeAssetAddress: TO_TOKEN.address,
+          feeAssetSymbol: TO_TOKEN.symbol,
+          feeAppliedAtQuote: true,
+          feeEnforcedOnExecution: true,
+          referralCode: 2147483648,
+        },
+      },
+      fromToken: FROM_TOKEN,
+      toToken: TO_TOKEN,
+      sellAmountBaseUnits: '1000000000000000000',
+    });
+
+    expect(monetized.feeBps).toBe(20);
+    expect(monetized.feeType).toBe('partner fee');
+    expect(monetized.feeDisplayLabel).toBe('partner fee');
+    expect(monetized.grossToAmountBaseUnits).toBe('1000000');
+    expect(monetized.feeAmountBaseUnits).toBe('2000');
+    expect(monetized.toAmountBaseUnits).toBe('998000');
+  });
 });

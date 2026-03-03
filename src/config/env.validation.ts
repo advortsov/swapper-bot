@@ -22,6 +22,8 @@ const ENV_KEY_PARASWAP_PARTNER_ADDRESS = 'PARASWAP_PARTNER_ADDRESS';
 const ENV_KEY_PARASWAP_API_VERSION = 'PARASWAP_API_VERSION';
 const ENV_KEY_JUPITER_PLATFORM_FEE_BPS = 'JUPITER_PLATFORM_FEE_BPS';
 const ENV_KEY_ODOS_MONETIZATION_MODE = 'ODOS_MONETIZATION_MODE';
+const ENV_KEY_ODOS_REFERRAL_CODE = 'ODOS_REFERRAL_CODE';
+const ENV_KEY_ODOS_MONETIZED_CHAINS = 'ODOS_MONETIZED_CHAINS';
 const MIN_PORT = 1;
 const MAX_PORT = 65_535;
 const MIN_CACHE_TTL = 1;
@@ -39,6 +41,7 @@ const DEFAULT_MAX_ACTIVE_PRICE_ALERTS_PER_USER = 20;
 const PARASWAP_SUPPORTED_API_VERSION = '6.2';
 const ALLOWED_ZEROX_FEE_TOKEN_MODES = ['auto', 'buy', 'sell'] as const;
 const ALLOWED_ODOS_MONETIZATION_MODES = ['disabled', 'tracking_only', 'enforced'] as const;
+const ALLOWED_ODOS_MONETIZED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
 const JUPITER_FEE_ACCOUNT_KEYS = [
   'JUPITER_FEE_ACCOUNT_SOL',
   'JUPITER_FEE_ACCOUNT_USDC',
@@ -244,6 +247,54 @@ function validateOptionalEnum(
   throw new Error(`Environment variable "${key}" must be one of: ${allowedValues.join(', ')}`);
 }
 
+function validateOptionalPositiveInteger(
+  source: EnvironmentSource,
+  key: string,
+): string | undefined {
+  const value = getOptionalString(source, key);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsedValue = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+    throw new Error(`Environment variable "${key}" must be a positive integer`);
+  }
+
+  return value;
+}
+
+function validateOptionalCsv(
+  source: EnvironmentSource,
+  key: string,
+  allowedValues: readonly string[],
+): string | undefined {
+  const value = getOptionalString(source, key);
+
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const items = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
+
+  if (items.length === 0) {
+    throw new Error(`Environment variable "${key}" must contain at least one value`);
+  }
+
+  const invalidValue = items.find((item) => !allowedValues.includes(item));
+
+  if (invalidValue) {
+    throw new Error(`Environment variable "${key}" must contain only: ${allowedValues.join(', ')}`);
+  }
+
+  return items.join(',');
+}
+
 function parseOptionalInteger(value: string | undefined): number {
   if (value === undefined) {
     return 0;
@@ -295,11 +346,13 @@ function validateJupiterFeeConfig(
   }
 }
 
-function validateOdosFeeConfig(odosMode: string | undefined): void {
-  if (odosMode === 'enforced') {
-    throw new Error(
-      'Environment variable "ODOS_MONETIZATION_MODE" cannot be "enforced" in the current launch stage',
-    );
+function validateOdosFeeConfig(
+  source: EnvironmentSource,
+  odosMode: string | undefined,
+  odosReferralCode: string | undefined,
+): void {
+  if (odosMode === 'enforced' && odosReferralCode === undefined) {
+    throw new Error(`Environment variable "${ENV_KEY_ODOS_REFERRAL_CODE}" is required`);
   }
 }
 
@@ -309,6 +362,7 @@ function validateFeeEnvironment(source: EnvironmentSource): EnvironmentResult {
   const paraswapApiVersion = getOptionalString(source, ENV_KEY_PARASWAP_API_VERSION);
   const jupiterFeeBps = getOptionalString(source, ENV_KEY_JUPITER_PLATFORM_FEE_BPS);
   const odosMode = getOptionalString(source, ENV_KEY_ODOS_MONETIZATION_MODE);
+  const odosReferralCode = getOptionalString(source, ENV_KEY_ODOS_REFERRAL_CODE);
 
   const feeEnvironment = {
     [ENV_KEY_ZEROX_FEE_BPS]:
@@ -330,12 +384,18 @@ function validateFeeEnvironment(source: EnvironmentSource): EnvironmentResult {
         ENV_KEY_ODOS_MONETIZATION_MODE,
         ALLOWED_ODOS_MONETIZATION_MODES,
       ) ?? source[ENV_KEY_ODOS_MONETIZATION_MODE],
+    [ENV_KEY_ODOS_REFERRAL_CODE]:
+      validateOptionalPositiveInteger(source, ENV_KEY_ODOS_REFERRAL_CODE) ??
+      source[ENV_KEY_ODOS_REFERRAL_CODE],
+    [ENV_KEY_ODOS_MONETIZED_CHAINS]:
+      validateOptionalCsv(source, ENV_KEY_ODOS_MONETIZED_CHAINS, ALLOWED_ODOS_MONETIZED_CHAINS) ??
+      source[ENV_KEY_ODOS_MONETIZED_CHAINS],
   };
 
   validateZeroXFeeConfig(source, zeroXFeeBps);
   validateParaSwapFeeConfig(source, paraswapFeeBps, paraswapApiVersion);
   validateJupiterFeeConfig(source, jupiterFeeBps);
-  validateOdosFeeConfig(odosMode);
+  validateOdosFeeConfig(source, odosMode, odosReferralCode);
 
   return feeEnvironment;
 }

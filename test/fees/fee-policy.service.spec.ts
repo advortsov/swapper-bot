@@ -90,4 +90,38 @@ describe('FeePolicyService', () => {
     expect(policy.executionFee.kind).toBe('none');
     expect(policy.isEnabled).toBe(false);
   });
+
+  it('должен включать enforced Odos fee при валидном referral code', () => {
+    const service = createService({
+      ODOS_MONETIZATION_MODE: 'enforced',
+      ODOS_REFERRAL_CODE: '2147483648',
+    });
+
+    const policy = service.getPolicy('odos', 'ethereum', ETH_TOKEN, USDC_TOKEN);
+
+    expect(policy.mode).toBe('enforced');
+    expect(policy.feeType).toBe('partner fee');
+    expect(policy.executionFee.kind).toBe('odos');
+    expect(policy.isEnabled).toBe(true);
+
+    if (policy.executionFee.kind !== 'odos') {
+      throw new Error('Expected Odos fee config');
+    }
+
+    expect(policy.executionFee.referralCode).toBe(2147483648);
+    expect(policy.executionFee.feeAssetSymbol).toBe('USDC');
+  });
+
+  it('должен выключать enforced Odos fee вне allowlist сетей', () => {
+    const service = createService({
+      ODOS_MONETIZATION_MODE: 'enforced',
+      ODOS_REFERRAL_CODE: '2147483648',
+      ODOS_MONETIZED_CHAINS: 'arbitrum,base',
+    });
+
+    const policy = service.getPolicy('odos', 'ethereum', ETH_TOKEN, USDC_TOKEN);
+
+    expect(policy.mode).toBe('disabled');
+    expect(policy.executionFee.kind).toBe('none');
+  });
 });

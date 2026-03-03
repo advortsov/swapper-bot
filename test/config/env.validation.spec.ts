@@ -108,15 +108,54 @@ describe('validateEnvironment', () => {
     );
   });
 
-  it('должен запрещать ODOS_MONETIZATION_MODE=enforced на текущем этапе', () => {
-    const environmentWithUnsupportedOdosMode = {
+  it('должен требовать ODOS_REFERRAL_CODE при ODOS_MONETIZATION_MODE=enforced', () => {
+    const environmentWithMissingOdosReferralCode = {
       ...validEnvironment,
       ODOS_MONETIZATION_MODE: 'enforced',
     };
 
-    expect(() => validateEnvironment(environmentWithUnsupportedOdosMode)).toThrowError(
-      'Environment variable "ODOS_MONETIZATION_MODE" cannot be "enforced" in the current launch stage',
+    expect(() => validateEnvironment(environmentWithMissingOdosReferralCode)).toThrowError(
+      'Environment variable "ODOS_REFERRAL_CODE" is required',
     );
+  });
+
+  it('должен требовать положительный integer для ODOS_REFERRAL_CODE', () => {
+    const environmentWithInvalidOdosReferralCode = {
+      ...validEnvironment,
+      ODOS_REFERRAL_CODE: 'abc',
+    };
+
+    expect(() => validateEnvironment(environmentWithInvalidOdosReferralCode)).toThrowError(
+      'Environment variable "ODOS_REFERRAL_CODE" must be a positive integer',
+    );
+  });
+
+  it('должен валидировать ODOS_MONETIZED_CHAINS', () => {
+    const environmentWithInvalidOdosChains = {
+      ...validEnvironment,
+      ODOS_MONETIZED_CHAINS: 'ethereum,solana',
+    };
+
+    expect(() => validateEnvironment(environmentWithInvalidOdosChains)).toThrowError(
+      'Environment variable "ODOS_MONETIZED_CHAINS" must contain only: ethereum, arbitrum, base, optimism',
+    );
+  });
+
+  it('должен принимать enforced Odos при валидном referral code', () => {
+    const environmentWithOdosReferralCode = {
+      ...validEnvironment,
+      ODOS_MONETIZATION_MODE: 'enforced',
+      ODOS_REFERRAL_CODE: '2147483648',
+      ODOS_MONETIZED_CHAINS: 'ethereum,base',
+    };
+
+    const result = validateEnvironment(environmentWithOdosReferralCode);
+
+    expect(result).toMatchObject({
+      ODOS_MONETIZATION_MODE: 'enforced',
+      ODOS_REFERRAL_CODE: '2147483648',
+      ODOS_MONETIZED_CHAINS: 'ethereum,base',
+    });
   });
 
   it('должен принимать ParaSwap только с версией API 6.2', () => {

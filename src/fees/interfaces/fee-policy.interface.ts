@@ -39,11 +39,17 @@ export interface IJupiterExecutionFeeConfig extends IBaseExecutionFeeConfig {
   feeMintAddress: string;
 }
 
+export interface IOdosExecutionFeeConfig extends IBaseExecutionFeeConfig {
+  kind: 'odos';
+  referralCode: number;
+}
+
 export type IExecutionFeeConfig =
   | IDisabledExecutionFeeConfig
   | IZeroXExecutionFeeConfig
   | IParaSwapExecutionFeeConfig
-  | IJupiterExecutionFeeConfig;
+  | IJupiterExecutionFeeConfig
+  | IOdosExecutionFeeConfig;
 
 export interface IFeePolicy {
   aggregatorName: string;
