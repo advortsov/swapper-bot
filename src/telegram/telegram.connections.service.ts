@@ -122,6 +122,8 @@ export class TelegramConnectionsService {
   }
 
   private async replySolanaSession(context: Context, session: ISwapSessionResponse): Promise<void> {
+    const swapValidityText = this.formatSwapSessionValidity(session);
+
     if (session.walletConnectUri) {
       await context.reply(this.buildPreparedSwapMessage(session), {
         parse_mode: 'HTML',
@@ -132,12 +134,7 @@ export class TelegramConnectionsService {
       await this.sendQrCode(
         context,
         session.walletConnectUri,
-        buildQrCaption(
-          'swap',
-          session.chain,
-          session.sessionId,
-          this.formatDate(session.expiresAt),
-        ),
+        buildQrCaption('swap', session.chain, session.sessionId, swapValidityText),
       );
       return;
     }
@@ -146,6 +143,8 @@ export class TelegramConnectionsService {
   }
 
   private async replyEvmSession(context: Context, session: ISwapSessionResponse): Promise<void> {
+    const swapValidityText = this.formatSwapSessionValidity(session);
+
     if (session.walletConnectUri) {
       await context.reply(this.buildPreparedSwapMessage(session), {
         parse_mode: 'HTML',
@@ -173,12 +172,7 @@ export class TelegramConnectionsService {
       await this.sendQrCode(
         context,
         session.walletConnectUri,
-        buildQrCaption(
-          'swap',
-          session.chain,
-          session.sessionId,
-          this.formatDate(session.expiresAt),
-        ),
+        buildQrCaption('swap', session.chain, session.sessionId, swapValidityText),
       );
       return;
     }
@@ -223,11 +217,28 @@ export class TelegramConnectionsService {
 
     return buildPreparedSwapMessage({
       session,
-      expiresAtText: this.formatDate(session.expiresAt),
-      quoteExpiresAtText: this.formatDate(session.quoteExpiresAt),
-      swapValidityText: formatSwapValidity(session.quoteExpiresAt),
+      swapValidityText: this.formatSwapSessionValidity(session),
       deliveryHint,
     });
+  }
+
+  private formatSwapSessionValidity(session: ISwapSessionResponse): string {
+    return formatSwapValidity(this.resolveSoonestExpiry(session.expiresAt, session.quoteExpiresAt));
+  }
+
+  private resolveSoonestExpiry(first: string, second: string): string {
+    const firstMs = new Date(first).getTime();
+    const secondMs = new Date(second).getTime();
+
+    if (Number.isNaN(firstMs)) {
+      return second;
+    }
+
+    if (Number.isNaN(secondMs)) {
+      return first;
+    }
+
+    return new Date(Math.min(firstMs, secondMs)).toISOString();
   }
 
   private buildConnectionButtons(

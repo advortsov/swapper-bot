@@ -91,7 +91,6 @@ export function buildPriceMessage(result: IPriceResponse): string {
 
 export function buildSwapQuotesMessage(
   quotes: ISwapQuotesResponse,
-  quoteExpiresAtText: string,
   swapValidityText: string,
 ): string {
   return [
@@ -105,7 +104,6 @@ export function buildSwapQuotesMessage(
     `🤖 Комиссия бота: ${formatFee(quotes.feeAmount, quotes.feeAmountSymbol ?? quotes.toSymbol, quotes.feeBps, quotes.feeDisplayLabel)}`,
     `✅ Net: ${formatAmount(quotes.toAmount, quotes.toSymbol)}`,
     `⏳ Срок актуальности: ${escapeHtml(swapValidityText)}`,
-    `🕒 Котировка актуальна до: <code>${escapeHtml(quoteExpiresAtText)}</code>`,
     `📊 Провайдеров опрошено: ${quotes.providersPolled}`,
     '',
     'ℹ️ Итоговая транзакция будет собрана уже с учётом комиссии бота.',
@@ -130,12 +128,10 @@ export function buildSwapButtonText(
 
 export function buildPreparedSwapMessage(input: {
   session: ISwapSessionResponse;
-  expiresAtText: string;
-  quoteExpiresAtText: string;
   swapValidityText: string;
   deliveryHint: string;
 }): string {
-  const { deliveryHint, expiresAtText, quoteExpiresAtText, session, swapValidityText } = input;
+  const { deliveryHint, session, swapValidityText } = input;
 
   return [
     '👛 <b>Своп подготовлен</b>',
@@ -149,9 +145,7 @@ export function buildPreparedSwapMessage(input: {
     `✅ Net: ${formatAmount(session.toAmount, session.toSymbol)}`,
     '',
     `🆔 Session ID: <code>${escapeHtml(session.sessionId)}</code>`,
-    `⏳ Сессия истекает: <code>${escapeHtml(expiresAtText)}</code>`,
-    `🕒 Котировка актуальна до: <code>${escapeHtml(quoteExpiresAtText)}</code>`,
-    `ℹ️ Срок актуальности свопа: ${escapeHtml(swapValidityText)}`,
+    `⏳ На подтверждение: <code>${escapeHtml(swapValidityText)}</code>`,
     '',
     'ℹ️ Транзакция уже собрана с учётом комиссии бота.',
     `ℹ️ ${escapeHtml(deliveryHint)}`,
@@ -193,7 +187,7 @@ export function buildQrCaption(
   kind: 'connect' | 'swap',
   chain: ChainType,
   sessionId: string,
-  expiresAtText: string,
+  ttlText: string,
 ): string {
   const mainText =
     kind === 'connect'
@@ -207,7 +201,9 @@ export function buildQrCaption(
   return [
     mainText,
     `🆔 Session ID: <code>${escapeHtml(sessionId)}</code>`,
-    `⏳ Сессия истекает: <code>${escapeHtml(expiresAtText)}</code>`,
+    kind === 'swap'
+      ? `⏳ На подтверждение: <code>${escapeHtml(ttlText)}</code>`
+      : `⏳ Сессия истекает: <code>${escapeHtml(ttlText)}</code>`,
   ].join('\n');
 }
 

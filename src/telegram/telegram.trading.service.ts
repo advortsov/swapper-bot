@@ -10,7 +10,7 @@ import {
   buildSwapQuotesMessage,
 } from './telegram.message-formatters';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
-import { createDateTimeFormatter, formatLocalDateTime, formatSwapValidity } from './telegram.time';
+import { formatSwapValidity } from './telegram.time';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { DEFAULT_CHAIN, SUPPORTED_CHAINS } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
@@ -33,16 +33,13 @@ const SWAP_CALLBACK_PREFIX = 'sw:';
 @Injectable()
 export class TelegramTradingService {
   private readonly logger = new Logger(TelegramTradingService.name);
-  private readonly dateTimeFormatter: Intl.DateTimeFormat;
 
   public constructor(
     private readonly priceService: PriceService,
     private readonly swapService: SwapService,
     private readonly usersRepository: UsersRepository,
     private readonly portfolioService: TelegramPortfolioService,
-  ) {
-    this.dateTimeFormatter = createDateTimeFormatter(process.env['APP_TIMEZONE']);
-  }
+  ) {}
 
   public async handlePrice(
     context: Context,
@@ -96,28 +93,21 @@ export class TelegramTradingService {
       explicitChain: command.explicitChain,
     });
 
-    await context.reply(
-      buildSwapQuotesMessage(
-        quotes,
-        formatLocalDateTime(quotes.quoteExpiresAt, this.dateTimeFormatter),
-        formatSwapValidity(quotes.quoteExpiresAt),
-      ),
-      {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: [
-            ...this.buildSwapButtons(quotes.providerQuotes, quotes.toSymbol, quotes.aggregator),
-            ...this.portfolioService.buildFavoriteActionButtons({
-              chain: quotes.chain,
-              amount: quotes.fromAmount,
-              fromTokenAddress: quotes.fromTokenAddress,
-              toTokenAddress: quotes.toTokenAddress,
-              userId,
-            }),
-          ],
-        },
+    await context.reply(buildSwapQuotesMessage(quotes, formatSwapValidity(quotes.quoteExpiresAt)), {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          ...this.buildSwapButtons(quotes.providerQuotes, quotes.toSymbol, quotes.aggregator),
+          ...this.portfolioService.buildFavoriteActionButtons({
+            chain: quotes.chain,
+            amount: quotes.fromAmount,
+            fromTokenAddress: quotes.fromTokenAddress,
+            toTokenAddress: quotes.toTokenAddress,
+            userId,
+          }),
+        ],
       },
-    );
+    });
   }
 
   public async handleSwapCallback(

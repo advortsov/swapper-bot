@@ -7,6 +7,7 @@ import {
   buildPreparedSwapMessage,
   buildPriceMessage,
   buildStartMessage,
+  buildSwapQuotesMessage,
 } from '../../src/telegram/telegram.message-formatters';
 
 describe('telegram.message-formatters', () => {
@@ -95,8 +96,6 @@ describe('telegram.message-formatters', () => {
 
     const message = buildPreparedSwapMessage({
       session,
-      expiresAtText: '03.03.2026 13:30',
-      quoteExpiresAtText: '03.03.2026 13:25',
       swapValidityText: '5 мин',
       deliveryHint: 'Открой Phantom и подпиши транзакцию.',
     });
@@ -104,7 +103,52 @@ describe('telegram.message-formatters', () => {
     expect(buildStartMessage()).toContain('👋 <b>Привет!</b>');
     expect(message).toContain('👛 <b>Своп подготовлен</b>');
     expect(message).toContain('🆔 Session ID: <code>session-id</code>');
-    expect(message).toContain('⏳ Сессия истекает: <code>03.03.2026 13:30</code>');
+    expect(message).toContain('⏳ На подтверждение: <code>5 мин</code>');
     expect(message).toContain('ℹ️ Транзакция уже собрана с учётом комиссии бота.');
+  });
+
+  it('должен показывать только оставшееся время в сообщении выбора маршрута', () => {
+    const message = buildSwapQuotesMessage(
+      {
+        intentId: 'intent-1',
+        chain: 'ethereum',
+        aggregator: 'paraswap',
+        fromSymbol: 'ETH',
+        toSymbol: 'USDC',
+        fromTokenAddress: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        toTokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+        fromAmount: '0.1',
+        toAmount: '198.42',
+        grossToAmount: '198.72',
+        feeAmount: '0.30',
+        feeAmountSymbol: 'USDC',
+        feeBps: 20,
+        feeMode: 'enforced',
+        feeType: 'partner fee',
+        feeDisplayLabel: 'partner fee',
+        providersPolled: 2,
+        quoteExpiresAt: '2026-03-03T10:25:00.000Z',
+        providerQuotes: [
+          {
+            aggregator: 'paraswap',
+            toAmount: '198.42',
+            grossToAmount: '198.72',
+            feeAmount: '0.30',
+            feeAmountSymbol: 'USDC',
+            feeBps: 20,
+            feeMode: 'enforced',
+            feeType: 'partner fee',
+            feeDisplayLabel: 'partner fee',
+            feeAppliedAtQuote: true,
+            feeEnforcedOnExecution: true,
+            estimatedGasUsd: 4.12,
+          },
+        ],
+      },
+      '5 мин',
+    );
+
+    expect(message).toContain('⏳ Срок актуальности: 5 мин');
+    expect(message).not.toContain('Котировка актуальна до');
   });
 });
