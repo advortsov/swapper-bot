@@ -83,6 +83,28 @@ export class PriceAlertsService {
     await this.priceAlertsRepository.markTriggered(alertId, { netToAmount, aggregator });
   }
 
+  public shouldTriggerOnCrossing(
+    alert: Pick<IPriceAlertRecord, 'targetToAmount' | 'lastObservedNetToAmount'>,
+    currentNetToAmount: string,
+  ): boolean {
+    if (alert.lastObservedNetToAmount === null) {
+      return false;
+    }
+
+    const previous = Number.parseFloat(alert.lastObservedNetToAmount);
+    const target = Number.parseFloat(alert.targetToAmount);
+    const current = Number.parseFloat(currentNetToAmount);
+
+    if (![previous, target, current].every((value) => Number.isFinite(value))) {
+      return false;
+    }
+
+    const crossedUp = previous < target && current >= target;
+    const crossedDown = previous > target && current <= target;
+
+    return crossedUp || crossedDown;
+  }
+
   private async getFavoriteOrThrow(userId: string, favoriteId: string): Promise<IFavoritePairView> {
     const favorite = await this.favoritesService.getFavorite(userId, favoriteId);
 

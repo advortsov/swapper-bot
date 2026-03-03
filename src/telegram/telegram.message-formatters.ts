@@ -57,7 +57,7 @@ export function buildHelpMessage(): string {
     '<b>5. Избранное и алерты</b>',
     '<code>/favorites</code> — сохранённые пары, текущий курс, установка алерта, удаление.',
     'Кнопки после <code>/price</code> и <code>/swap</code>: ⭐ В избранное, 🔔 Алерт.',
-    'Алерт одноразовый: срабатывает, когда лучший net достигает заданного порога.',
+    'Алерт одноразовый: срабатывает, когда лучший net пересекает заданный порог вверх или вниз.',
     '',
     '<b>6. История</b>',
     '<code>/history</code> — последние успешные обмены.',
@@ -278,7 +278,7 @@ export function buildHistoryMessage(items: readonly ISwapHistoryItem[]): string 
 }
 
 export function buildAlertPromptMessage(): string {
-  return '🔔 Введи целевое количество to-токена, при котором нужно прислать уведомление.';
+  return '🔔 Введи целевое количество to-токена. Алерт сработает при пересечении этого порога вверх или вниз.';
 }
 
 export function buildAlertCreatedMessage(input: {

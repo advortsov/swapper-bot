@@ -73,10 +73,14 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
       });
       const selection = await this.priceQuoteService.fetchQuoteSelection(prepared);
       const response = this.priceQuoteService.buildResponse(prepared, selection);
+      const shouldTrigger = this.priceAlertsService.shouldTriggerOnCrossing(
+        alert,
+        response.toAmount,
+      );
 
       await this.priceAlertsService.markObserved(alert.id, response.toAmount, response.aggregator);
 
-      if (Number.parseFloat(response.toAmount) < Number.parseFloat(alert.targetToAmount)) {
+      if (!shouldTrigger) {
         return;
       }
 
