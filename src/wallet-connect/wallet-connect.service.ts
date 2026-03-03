@@ -4,8 +4,10 @@ import SignClient from '@walletconnect/sign-client';
 import type { SessionTypes } from '@walletconnect/types';
 import { randomUUID } from 'node:crypto';
 
+import { AllowanceService } from '../allowance/allowance.service';
 import type {
   ICreateWalletConnectConnectionInput,
+  ICreateWalletConnectApproveSessionInput,
   ICreateWalletConnectSessionInput,
   IPhantomCallbackQuery,
   IWalletConnectionSession,
@@ -15,24 +17,26 @@ import type {
 } from './interfaces/wallet-connect.interface';
 import { DEFAULT_APP_PUBLIC_URL, MIN_SWAP_TIMEOUT_SECONDS } from './wallet-connect.constants';
 import {
-  buildSwapTransactionForPayload,
-  buildWalletExplorerUrl,
   createWalletConnectMetadata,
   escapeWalletConnectHtml,
-  executeWalletSwapOverConnection,
   extractWalletAddress,
-  getWalletConnectChainConfig,
   getWalletConnectSwapPayload,
   getWalletConnectionFamily,
   getWalletConnectErrorWithLog,
   requestWalletConnectExecution,
   registerWalletConnectClientEvents,
-  resolveWalletConnectAggregator,
   saveWalletConnection,
   sendWalletConnectTelegramMessage,
   waitForWalletConnectApproval,
 } from './wallet-connect.evm.helpers';
+import {
+  executeWalletConnectApprove,
+  executeWalletConnectSwap,
+  handleWalletConnectSessionError,
+  notifyConnectedWallet,
+} from './wallet-connect.execution';
 import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
+import { createWalletConnectSessionRecord } from './wallet-connect.session-factory';
 import { WalletConnectSessionStore } from './wallet-connect.session-store';
 import { AGGREGATORS_TOKEN } from '../aggregators/aggregators.constants';
 import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
@@ -58,6 +62,9 @@ export class WalletConnectService implements OnModuleInit {
 
   @Inject(AGGREGATORS_TOKEN)
   private readonly aggregators!: readonly IAggregator[];
+
+  @Inject()
+  private readonly allowanceService!: AllowanceService;
 
   public constructor(
     private readonly configService: ConfigService,
@@ -155,15 +162,12 @@ export class WalletConnectService implements OnModuleInit {
 
     if (cached?.topic) {
       const syntheticSessionId = randomUUID();
-      void executeWalletSwapOverConnection({
-        connection: cached,
+      void executeWalletConnectSwap({
+        deps: this.getExecutionDependencies(),
+        topic: cached.topic,
+        userId: cached.userId,
+        walletAddress: cached.address,
         swapPayload: input.swapPayload,
-        aggregators: this.aggregators,
-        configService: this.configService,
-        requestExecution: this.requestWalletExecution.bind(this),
-        swapExecutionAuditService: this.swapExecutionAuditService,
-        telegramBotToken: this.telegramBotToken,
-        logger: this.logger,
       });
 
       return {
@@ -175,6 +179,26 @@ export class WalletConnectService implements OnModuleInit {
     }
 
     return this.createEvmSwapSession(input);
+  }
+
+  public async createApproveSession(
+    input: ICreateWalletConnectApproveSessionInput,
+  ): Promise<IWalletConnectSessionPublic> {
+    const cached = this.getReusableSession(input.userId, input.approvalPayload.chain);
+
+    if (cached?.topic) {
+      const syntheticSessionId = randomUUID();
+      void this.executeApprovalOverConnection(cached, input.approvalPayload);
+
+      return {
+        sessionId: syntheticSessionId,
+        uri: null,
+        expiresAt: new Date(cached.expiresAt).toISOString(),
+        walletDelivery: 'connected-wallet',
+      };
+    }
+
+    return this.createEvmApproveSession(input);
   }
 
   public getPhantomConnectUrl(sessionId: string): string {
@@ -192,114 +216,80 @@ export class WalletConnectService implements OnModuleInit {
   }
 
   public getReusableSession(userId: string, chain: ChainType): IWalletConnectionSession | null {
-    const family = getWalletConnectionFamily(chain);
-    return this.sessionStore.touchConnection(userId, family);
+    return this.sessionStore.touchConnection(userId, getWalletConnectionFamily(chain));
   }
 
   private async createEvmConnectSession(
     input: ICreateWalletConnectConnectionInput,
   ): Promise<IWalletConnectSessionPublic> {
     this.ensureWalletConnectConfigured();
-    const signClient = await this.getSignClient();
-    const chainConfig = getWalletConnectChainConfig(input.chain);
-    const { uri, approval } = await signClient.connect({
-      requiredNamespaces: {
-        [chainConfig.namespace]: {
-          methods: [...chainConfig.methods],
-          chains: [chainConfig.chainId],
-          events: [...chainConfig.events],
-        },
-      },
-    });
-
-    if (!uri) {
-      throw new BusinessException('Failed to create WalletConnect URI');
-    }
-
-    const sessionId = randomUUID();
-    const expiresAt = Date.now() + this.swapTimeoutSeconds * 1_000;
-    const session: IWalletConnectSession = {
-      sessionId,
-      userId: input.userId,
-      uri,
-      expiresAt,
+    const { approval, publicSession, session } = await createWalletConnectSessionRecord({
       kind: 'connect',
-      family: 'evm',
+      signClient: await this.getSignClient(),
+      swapTimeoutSeconds: this.swapTimeoutSeconds,
+      userId: input.userId,
+      sessionIdFactory: randomUUID,
       chain: input.chain,
-    };
-
+    });
     this.sessionStore.save(session);
-    this.approvals.set(sessionId, approval);
-    void this.handleSessionLifecycle(sessionId);
+    this.approvals.set(session.sessionId, approval);
+    void this.handleSessionLifecycle(session.sessionId);
 
-    return {
-      sessionId,
-      uri,
-      expiresAt: new Date(expiresAt).toISOString(),
-      walletDelivery: 'qr',
-    };
+    return publicSession;
   }
 
   private async createEvmSwapSession(
     input: ICreateWalletConnectSessionInput,
   ): Promise<IWalletConnectSessionPublic> {
     this.ensureWalletConnectConfigured();
-    const signClient = await this.getSignClient();
-    const chainConfig = getWalletConnectChainConfig(input.swapPayload.chain);
-    const { uri, approval } = await signClient.connect({
-      requiredNamespaces: {
-        [chainConfig.namespace]: {
-          methods: [...chainConfig.methods],
-          chains: [chainConfig.chainId],
-          events: [...chainConfig.events],
-        },
-      },
-    });
-
-    if (!uri) {
-      throw new BusinessException('Failed to create WalletConnect URI');
-    }
-
-    const sessionId = randomUUID();
-    const expiresAt = Date.now() + this.swapTimeoutSeconds * 1_000;
-    const session: IWalletConnectSession = {
-      sessionId,
-      userId: input.userId,
-      uri,
-      expiresAt,
+    const { approval, publicSession, session } = await createWalletConnectSessionRecord({
       kind: 'swap',
-      family: 'evm',
-      chain: input.swapPayload.chain,
+      signClient: await this.getSignClient(),
       swapPayload: { ...input.swapPayload },
-    };
-
+      swapTimeoutSeconds: this.swapTimeoutSeconds,
+      userId: input.userId,
+      sessionIdFactory: randomUUID,
+      chain: input.swapPayload.chain,
+    });
     this.sessionStore.save(session);
-    this.approvals.set(sessionId, approval);
-    void this.handleSessionLifecycle(sessionId);
+    this.approvals.set(session.sessionId, approval);
+    void this.handleSessionLifecycle(session.sessionId);
 
-    return {
-      sessionId,
-      uri,
-      expiresAt: new Date(expiresAt).toISOString(),
-      walletDelivery: 'qr',
-    };
+    return publicSession;
+  }
+
+  private async createEvmApproveSession(
+    input: ICreateWalletConnectApproveSessionInput,
+  ): Promise<IWalletConnectSessionPublic> {
+    this.ensureWalletConnectConfigured();
+    const { approval, publicSession, session } = await createWalletConnectSessionRecord({
+      kind: 'approve',
+      signClient: await this.getSignClient(),
+      approvalPayload: { ...input.approvalPayload },
+      swapTimeoutSeconds: this.swapTimeoutSeconds,
+      userId: input.userId,
+      sessionIdFactory: randomUUID,
+      chain: input.approvalPayload.chain,
+    });
+    this.sessionStore.save(session);
+    this.approvals.set(session.sessionId, approval);
+    void this.handleSessionLifecycle(session.sessionId);
+
+    return publicSession;
   }
 
   private ensureWalletConnectConfigured(): void {
     if (this.projectId.trim() === '') {
-      throw new BusinessException('WC_PROJECT_ID is required for EVM /swap');
+      throw new BusinessException('WC_PROJECT_ID is required for EVM WalletConnect flows');
     }
   }
 
   private resolveTimeoutSeconds(): number {
     const rawTimeout = this.configService.get<string>('SWAP_TIMEOUT_SECONDS');
     const parsedTimeout = Number.parseInt(rawTimeout ?? `${DEFAULT_SWAP_TIMEOUT_SECONDS}`, 10);
-
-    if (!Number.isInteger(parsedTimeout) || parsedTimeout < MIN_SWAP_TIMEOUT_SECONDS) {
-      return DEFAULT_SWAP_TIMEOUT_SECONDS;
-    }
-
-    return parsedTimeout;
+    return !Number.isInteger(parsedTimeout) || parsedTimeout < MIN_SWAP_TIMEOUT_SECONDS
+      ? DEFAULT_SWAP_TIMEOUT_SECONDS
+      : parsedTimeout;
   }
 
   private async getSignClient(): Promise<SignClient> {
@@ -346,16 +336,20 @@ export class WalletConnectService implements OnModuleInit {
     approvedSession: SessionTypes.Struct,
   ): Promise<void> {
     const walletAddress = extractWalletAddress(approvedSession, session.chain);
-    this.sessionStore.saveConnection(
-      saveWalletConnection({
-        session,
-        approvedSession,
-        walletAddress,
-      }),
-    );
+    const connection = saveWalletConnection({
+      session,
+      approvedSession,
+      walletAddress,
+    });
+    this.sessionStore.saveConnection(connection);
 
     if (session.kind === 'connect') {
       await this.notifyConnectedWallet(session, walletAddress);
+      return;
+    }
+
+    if (session.kind === 'approve') {
+      await this.executeApprovedApproval(session, approvedSession, walletAddress);
       return;
     }
 
@@ -366,16 +360,12 @@ export class WalletConnectService implements OnModuleInit {
     session: IWalletConnectSession,
     walletAddress: string,
   ): Promise<void> {
-    await sendWalletConnectTelegramMessage({
-      telegramBotToken: this.telegramBotToken,
-      chatId: session.userId,
-      text: [
-        '👛 <b>Кошелёк подключён</b>',
-        '',
-        `🌐 Семейство: <code>${session.family === 'solana' ? 'Solana' : 'EVM'}</code>`,
-        `🆔 Адрес: <code>${escapeWalletConnectHtml(walletAddress)}</code>`,
-      ].join('\n'),
+    await notifyConnectedWallet({
+      chainFamily: session.family === 'solana' ? 'Solana' : 'EVM',
       logger: this.logger,
+      telegramBotToken: this.telegramBotToken,
+      userId: session.userId,
+      walletAddress,
     });
   }
 
@@ -384,70 +374,70 @@ export class WalletConnectService implements OnModuleInit {
     approvedSession: SessionTypes.Struct,
     walletAddress: string,
   ): Promise<void> {
-    const swapPayload = getWalletConnectSwapPayload(session);
-    const aggregator = resolveWalletConnectAggregator(this.aggregators, swapPayload.aggregatorName);
-    const transaction = await buildSwapTransactionForPayload(
-      swapPayload,
-      aggregator,
+    await executeWalletConnectSwap({
+      deps: this.getExecutionDependencies(),
+      topic: approvedSession.topic,
+      userId: session.userId,
       walletAddress,
-    );
-    const transactionHash = await this.requestWalletExecution(
-      approvedSession.topic,
-      swapPayload.chain,
-      walletAddress,
-      transaction,
-    );
-    const explorerUrl = buildWalletExplorerUrl(
-      this.configService,
-      swapPayload.chain,
-      transactionHash,
-    );
-
-    await sendWalletConnectTelegramMessage({
-      telegramBotToken: this.telegramBotToken,
-      chatId: session.userId,
-      text: [
-        '✅ <b>Своп отправлен</b>',
-        '',
-        `🌐 Сеть: <code>${escapeWalletConnectHtml(swapPayload.chain)}</code>`,
-        `🏆 Агрегатор: <code>${escapeWalletConnectHtml(swapPayload.aggregatorName)}</code>`,
-        `🧾 Tx: <code>${escapeWalletConnectHtml(transactionHash)}</code>`,
-        `<a href="${escapeWalletConnectHtml(explorerUrl)}">Открыть в эксплорере</a>`,
-      ].join('\n'),
-      logger: this.logger,
+      swapPayload: getWalletConnectSwapPayload(session),
     });
-    await this.swapExecutionAuditService.markSuccess(
-      swapPayload.executionId,
-      swapPayload.aggregatorName,
-      swapPayload.feeMode,
-      transactionHash,
-    );
+  }
+
+  private async executeApprovedApproval(
+    session: IWalletConnectSession,
+    approvedSession: SessionTypes.Struct,
+    walletAddress: string,
+  ): Promise<void> {
+    const approvalPayload = session.approvalPayload;
+
+    if (!approvalPayload) {
+      throw new BusinessException(
+        'Approve payload is not available for this WalletConnect session',
+      );
+    }
+
+    await executeWalletConnectApprove({
+      approvalPayload,
+      deps: this.getExecutionDependencies(),
+      successTitle: 'Approve отправлен',
+      topic: approvedSession.topic,
+      userId: session.userId,
+      walletAddress,
+    });
+  }
+
+  private async executeApprovalOverConnection(
+    connection: IWalletConnectionSession,
+    approvalPayload: ICreateWalletConnectApproveSessionInput['approvalPayload'],
+  ): Promise<void> {
+    try {
+      await executeWalletConnectApprove({
+        approvalPayload,
+        deps: this.getExecutionDependencies(),
+        successTitle: 'Approve отправлен в подключённый кошелёк',
+        topic: connection.topic ?? '',
+        userId: connection.userId,
+        walletAddress: connection.address,
+      });
+    } catch (error: unknown) {
+      await sendWalletConnectTelegramMessage({
+        telegramBotToken: this.telegramBotToken,
+        chatId: connection.userId,
+        text: `❌ <b>Ошибка:</b> ${escapeWalletConnectHtml(this.getErrorMessage(error))}`,
+        logger: this.logger,
+      });
+    }
   }
 
   private async handleSessionError(session: IWalletConnectSession, message: string): Promise<void> {
-    const swapPayload = session.swapPayload;
-
-    if (swapPayload) {
-      await this.swapExecutionAuditService.markError(
-        swapPayload.executionId,
-        swapPayload.aggregatorName,
-        swapPayload.feeMode,
-        message,
-      );
-      await sendWalletConnectTelegramMessage({
-        telegramBotToken: this.telegramBotToken,
-        chatId: session.userId,
-        text: `❌ <b>Ошибка:</b> ${escapeWalletConnectHtml(message)}`,
+    await handleWalletConnectSessionError({
+      deps: {
         logger: this.logger,
-      });
-      return;
-    }
-
-    await sendWalletConnectTelegramMessage({
-      telegramBotToken: this.telegramBotToken,
-      chatId: session.userId,
-      text: `❌ <b>Ошибка:</b> ${escapeWalletConnectHtml(message)}`,
-      logger: this.logger,
+        swapExecutionAuditService: this.swapExecutionAuditService,
+        telegramBotToken: this.telegramBotToken,
+      },
+      message,
+      session,
     });
   }
 
@@ -468,5 +458,30 @@ export class WalletConnectService implements OnModuleInit {
 
   private getErrorMessage(error: unknown): string {
     return getWalletConnectErrorWithLog(error, this.logger);
+  }
+
+  private getExecutionDependencies(): {
+    allowanceService: AllowanceService;
+    aggregators: readonly IAggregator[];
+    configService: ConfigService;
+    logger: Logger;
+    requestWalletExecution: (
+      topic: string,
+      chain: ChainType,
+      walletAddress: string,
+      transaction: ISwapTransaction,
+    ) => Promise<string>;
+    swapExecutionAuditService: SwapExecutionAuditService;
+    telegramBotToken: string;
+  } {
+    return {
+      allowanceService: this.allowanceService,
+      aggregators: this.aggregators,
+      configService: this.configService,
+      logger: this.logger,
+      requestWalletExecution: this.requestWalletExecution.bind(this),
+      swapExecutionAuditService: this.swapExecutionAuditService,
+      telegramBotToken: this.telegramBotToken,
+    };
   }
 }

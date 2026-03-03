@@ -28,6 +28,7 @@ export class TelegramUpdateHandler {
     bot.command('help', async (context: Context) => this.handleHelp(context));
     bot.command('price', async (context: Context) => this.handlePrice(context));
     bot.command('swap', async (context: Context) => this.handleSwap(context));
+    bot.command('approve', async (context: Context) => this.handleApprove(context));
     bot.command('connect', async (context: Context) => this.handleConnect(context));
     bot.command('disconnect', async (context: Context) => this.handleDisconnect(context));
     bot.command('favorites', async (context: Context) => this.handleFavorites(context));
@@ -103,6 +104,27 @@ export class TelegramUpdateHandler {
       );
     } catch (error: unknown) {
       await this.replyWithError(context, 'Swap command failed', error);
+    }
+  }
+
+  private async handleApprove(context: Context): Promise<void> {
+    const from = context.from;
+    const text = this.getMessageText(context.message);
+
+    if (!from || text === '') {
+      await context.reply('Команда не распознана. Пример: /approve 100 USDC on ethereum');
+      return;
+    }
+
+    try {
+      await this.tradingService.handleApprove(
+        context,
+        from.id.toString(),
+        from.username ?? null,
+        text,
+      );
+    } catch (error: unknown) {
+      await this.replyWithError(context, 'Approve command failed', error);
     }
   }
 
@@ -184,6 +206,16 @@ export class TelegramUpdateHandler {
   private async routeAction(context: Context, userId: string, data: string): Promise<void> {
     if (this.tradingService.isSwapCallback(data)) {
       await this.tradingService.handleSwapCallback(context, userId, data, this.connectionsService);
+      return;
+    }
+
+    if (this.tradingService.isApproveCallback(data)) {
+      await this.tradingService.handleApproveCallback(
+        context,
+        userId,
+        data,
+        this.connectionsService,
+      );
       return;
     }
 

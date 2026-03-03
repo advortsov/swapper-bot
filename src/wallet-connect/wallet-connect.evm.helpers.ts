@@ -20,7 +20,6 @@ import { escapeHtml, getWalletConnectErrorMessage } from './wallet-connect.utils
 import type { IAggregator, ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
-import type { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
 
 export function createWalletConnectMetadata(appPublicUrl: string): {
   name: string;
@@ -151,17 +150,21 @@ export function parseWalletConnectTransactionResult(result: unknown): string {
 }
 
 export function buildWalletExplorerUrl(
-  configService: ConfigService,
+  _configService: ConfigService,
   chain: ChainType,
   transactionHash: string,
 ): string {
+  const getExplorerUrl = (key: string): string | undefined => {
+    const value = process.env[key];
+    return typeof value === 'string' ? value : undefined;
+  };
+
   const explorerUrlByChain: Readonly<Record<ChainType, string>> = {
-    ethereum: configService.get<string>('EXPLORER_URL_ETHEREUM') ?? 'https://etherscan.io/tx/',
-    arbitrum: configService.get<string>('EXPLORER_URL_ARBITRUM') ?? 'https://arbiscan.io/tx/',
-    base: configService.get<string>('EXPLORER_URL_BASE') ?? 'https://basescan.org/tx/',
-    optimism:
-      configService.get<string>('EXPLORER_URL_OPTIMISM') ?? 'https://optimistic.etherscan.io/tx/',
-    solana: configService.get<string>('EXPLORER_URL_SOLANA') ?? 'https://solscan.io/tx/',
+    ethereum: getExplorerUrl('EXPLORER_URL_ETHEREUM') ?? 'https://etherscan.io/tx/',
+    arbitrum: getExplorerUrl('EXPLORER_URL_ARBITRUM') ?? 'https://arbiscan.io/tx/',
+    base: getExplorerUrl('EXPLORER_URL_BASE') ?? 'https://basescan.org/tx/',
+    optimism: getExplorerUrl('EXPLORER_URL_OPTIMISM') ?? 'https://optimistic.etherscan.io/tx/',
+    solana: getExplorerUrl('EXPLORER_URL_SOLANA') ?? 'https://solscan.io/tx/',
   };
 
   const baseUrl = explorerUrlByChain[chain];
@@ -283,6 +286,7 @@ export async function sendWalletConnectTelegramMessage(input: {
   telegramBotToken: string;
   chatId: string;
   text: string;
+  replyMarkup?: Record<string, unknown>;
   logger: Logger;
 }): Promise<void> {
   if (input.telegramBotToken.trim() === '') {
@@ -301,6 +305,7 @@ export async function sendWalletConnectTelegramMessage(input: {
         text: input.text,
         parse_mode: 'HTML',
         disable_web_page_preview: TELEGRAM_PREVIEW_DISABLED,
+        reply_markup: input.replyMarkup,
       }),
     },
   );
@@ -324,81 +329,4 @@ export function getWalletConnectErrorWithLog(error: unknown, logger: Logger): st
   }
 
   return getWalletConnectErrorMessage(error);
-}
-
-export async function executeWalletSwapOverConnection(input: {
-  connection: IWalletConnectionSession;
-  swapPayload: IWalletConnectSwapPayload;
-  aggregators: readonly IAggregator[];
-  configService: ConfigService;
-  requestExecution: (
-    topic: string,
-    chain: ChainType,
-    walletAddress: string,
-    transaction: ISwapTransaction,
-  ) => Promise<string>;
-  swapExecutionAuditService: SwapExecutionAuditService;
-  telegramBotToken: string;
-  logger: Logger;
-}): Promise<void> {
-  const {
-    aggregators,
-    configService,
-    connection,
-    logger,
-    requestExecution,
-    swapExecutionAuditService,
-    swapPayload,
-    telegramBotToken,
-  } = input;
-
-  try {
-    const aggregator = resolveWalletConnectAggregator(aggregators, swapPayload.aggregatorName);
-    const transaction = await buildSwapTransactionForPayload(
-      swapPayload,
-      aggregator,
-      connection.address,
-    );
-    const transactionHash = await requestExecution(
-      connection.topic ?? '',
-      swapPayload.chain,
-      connection.address,
-      transaction,
-    );
-    const explorerUrl = buildWalletExplorerUrl(configService, swapPayload.chain, transactionHash);
-
-    await swapExecutionAuditService.markSuccess(
-      swapPayload.executionId,
-      swapPayload.aggregatorName,
-      swapPayload.feeMode,
-      transactionHash,
-    );
-    await sendWalletConnectTelegramMessage({
-      telegramBotToken,
-      chatId: connection.userId,
-      text: [
-        '✅ <b>Запрос на своп отправлен в подключённый кошелёк</b>',
-        '',
-        `🌐 Сеть: <code>${escapeWalletConnectHtml(swapPayload.chain)}</code>`,
-        `🏆 Агрегатор: <code>${escapeWalletConnectHtml(swapPayload.aggregatorName)}</code>`,
-        `🧾 Tx: <code>${escapeWalletConnectHtml(transactionHash)}</code>`,
-        `<a href="${escapeWalletConnectHtml(explorerUrl)}">Открыть в эксплорере</a>`,
-      ].join('\n'),
-      logger,
-    });
-  } catch (error: unknown) {
-    const message = getWalletConnectErrorWithLog(error, logger);
-    await swapExecutionAuditService.markError(
-      swapPayload.executionId,
-      swapPayload.aggregatorName,
-      swapPayload.feeMode,
-      message,
-    );
-    await sendWalletConnectTelegramMessage({
-      telegramBotToken,
-      chatId: connection.userId,
-      text: `❌ <b>Ошибка:</b> ${escapeWalletConnectHtml(message)}`,
-      logger,
-    });
-  }
 }

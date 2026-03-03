@@ -7,6 +7,7 @@ import { TelegramSettingsHandler } from './telegram.settings-handler';
 import { TelegramTradingService } from './telegram.trading.service';
 import { TelegramUpdateHandler } from './telegram.update-handler';
 import { AlertsModule } from '../alerts/alerts.module';
+import { AllowanceModule } from '../allowance/allowance.module';
 import { FavoritesModule } from '../favorites/favorites.module';
 import { HistoryModule } from '../history/history.module';
 import { PriceModule } from '../price/price.module';
@@ -23,6 +24,7 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
     AlertsModule,
     HistoryModule,
     WalletConnectModule,
+    AllowanceModule,
   ],
   providers: [
     TelegramSettingsHandler,

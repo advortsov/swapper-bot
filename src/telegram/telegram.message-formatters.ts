@@ -1,3 +1,7 @@
+import type {
+  IApproveOptionsResponse,
+  IApproveSessionResponse,
+} from '../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import type { IFavoritePairView } from '../favorites/interfaces/favorite-pair.interface';
 import type { ISwapHistoryItem } from '../history/interfaces';
@@ -44,25 +48,30 @@ export function buildHelpMessage(): string {
     '<code>/swap 0.1 ETH to USDC on arbitrum</code>',
     '<code>/swap 1 SOL to USDC on solana</code>',
     '',
-    '<b>3. Адрес токена вместо символа</b>',
+    '<b>3. Approve</b>',
+    '<code>/approve &lt;amount&gt; &lt;token&gt; [on &lt;chain&gt;]</code>',
+    'Показывает spender для EVM-агрегаторов и даёт выбрать approve exact или approve max.',
+    '<code>/approve 100 USDC on arbitrum</code>',
+    '',
+    '<b>4. Адрес токена вместо символа</b>',
     'Если указываешь адрес токена, сеть обязательна.',
     '<code>/price 100 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48 to USDT on ethereum</code>',
     '<code>/swap 1 SOL to EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v on solana</code>',
     '',
-    '<b>4. Кошелёк</b>',
+    '<b>5. Кошелёк</b>',
     '<code>/connect [on &lt;chain&gt;]</code>',
     '<code>/disconnect [on &lt;chain&gt;]</code>',
     'EVM-подключение общее для <code>ethereum</code>, <code>arbitrum</code>, <code>base</code> и <code>optimism</code>.',
     '',
-    '<b>5. Избранное и алерты</b>',
+    '<b>6. Избранное и алерты</b>',
     '<code>/favorites</code> — сохранённые пары, текущий курс, установка алерта, удаление.',
     'Кнопки после <code>/price</code> и <code>/swap</code>: ⭐ В избранное, 🔔 Алерт.',
     'Алерт одноразовый: срабатывает, когда лучший net пересекает заданный порог вверх или вниз.',
     '',
-    '<b>6. История</b>',
+    '<b>7. История</b>',
     '<code>/history</code> — последние успешные обмены.',
     '',
-    '<b>7. Настройки</b>',
+    '<b>8. Настройки</b>',
     '<code>/settings</code> — slippage и предпочитаемый агрегатор.',
     '',
     '<b>Поддерживаемые сети</b>',
@@ -126,6 +135,53 @@ export function buildSwapButtonText(
   return `${prefix}${escapeHtml(quote.aggregator)} · ${escapeHtml(quote.toAmount)} ${escapeHtml(toSymbol)}`;
 }
 
+export function buildApproveOptionsMessage(input: IApproveOptionsResponse): string {
+  return [
+    '🛡️ <b>Approve для токена</b>',
+    '',
+    `🪙 Токен: <code>${escapeHtml(input.tokenSymbol)}</code>`,
+    `🌐 Сеть: <code>${escapeHtml(input.chain)}</code>`,
+    `📦 Сумма: <code>${escapeHtml(input.amount)}</code>`,
+    `👛 Кошелёк: ${input.walletAddress ? `<code>${escapeHtml(input.walletAddress)}</code>` : 'будет определён после подключения'}`,
+    '',
+    '<b>Доступные spender-цели</b>',
+    ...input.options.map((option) =>
+      [
+        `• <code>${escapeHtml(option.aggregatorName)}</code>`,
+        `  🔐 Spender: <code>${escapeHtml(option.spenderAddress)}</code>`,
+        `  📏 Allowance: <code>${escapeHtml(option.currentAllowance ?? 'неизвестно')}</code>`,
+      ].join('\n'),
+    ),
+    '',
+    'ℹ️ Выбери approve exact или approve max кнопками ниже.',
+  ].join('\n');
+}
+
+export function buildPreparedApproveMessage(input: {
+  session: IApproveSessionResponse;
+  deliveryHint: string;
+  expiryText: string;
+}): string {
+  const { deliveryHint, expiryText, session } = input;
+
+  return [
+    '🛡️ <b>Approve подготовлен</b>',
+    '',
+    `🪙 Токен: <code>${escapeHtml(session.tokenSymbol)}</code>`,
+    `🌐 Сеть: <code>${escapeHtml(session.chain)}</code>`,
+    `🏆 Агрегатор: <code>${escapeHtml(session.aggregatorName)}</code>`,
+    `📦 Сумма: <code>${escapeHtml(session.amount)}</code>`,
+    `📏 Текущий allowance: <code>${escapeHtml(session.currentAllowance ?? 'неизвестно')}</code>`,
+    `🔐 Spender: <code>${escapeHtml(session.spenderAddress)}</code>`,
+    `⚙️ Режим: <code>${escapeHtml(session.mode)}</code>`,
+    '',
+    `🆔 Session ID: <code>${escapeHtml(session.sessionId)}</code>`,
+    `⏳ На подтверждение: <code>${escapeHtml(expiryText)}</code>`,
+    '',
+    `ℹ️ ${escapeHtml(deliveryHint)}`,
+  ].join('\n');
+}
+
 export function buildPreparedSwapMessage(input: {
   session: ISwapSessionResponse;
   swapValidityText: string;
@@ -184,7 +240,7 @@ export function buildConnectionSessionMessage(
 }
 
 export function buildQrCaption(
-  kind: 'connect' | 'swap',
+  kind: 'connect' | 'swap' | 'approve',
   chain: ChainType,
   sessionId: string,
   ttlText: string,
@@ -194,14 +250,16 @@ export function buildQrCaption(
       ? chain === 'solana'
         ? 'ℹ️ Отсканируй QR в Phantom для подключения.'
         : 'ℹ️ Отсканируй QR в MetaMask или Trust Wallet для подключения.'
-      : chain === 'solana'
-        ? 'ℹ️ Отсканируй QR в Phantom для подписи.'
-        : 'ℹ️ Отсканируй QR в EVM-кошельке для подтверждения.';
+      : kind === 'approve'
+        ? 'ℹ️ Отсканируй QR в EVM-кошельке для approve.'
+        : chain === 'solana'
+          ? 'ℹ️ Отсканируй QR в Phantom для подписи.'
+          : 'ℹ️ Отсканируй QR в EVM-кошельке для подтверждения.';
 
   return [
     mainText,
     `🆔 Session ID: <code>${escapeHtml(sessionId)}</code>`,
-    kind === 'swap'
+    kind === 'swap' || kind === 'approve'
       ? `⏳ На подтверждение: <code>${escapeHtml(ttlText)}</code>`
       : `⏳ Сессия истекает: <code>${escapeHtml(ttlText)}</code>`,
   ].join('\n');

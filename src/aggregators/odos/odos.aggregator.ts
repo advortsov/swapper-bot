@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { resolveOdosApprovalTarget } from './odos.approval-target';
+import { getOdosQuoteAmount, getValidatedOdosPartnerFeePercent } from './odos.quote-helpers';
+import type {
+  IApprovalTargetRequest,
+  IApprovalTargetResponse,
+} from '../../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
@@ -201,7 +207,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
       }
 
       if (params.feeConfig.kind === 'odos' && params.feeConfig.mode === 'enforced') {
-        this.getValidatedPartnerFeePercent(quoteResponse.body);
+        getValidatedOdosPartnerFeePercent(this.metricsService, quoteResponse.body);
       }
 
       if (quoteResponse.body.pathId.trim() === '') {
@@ -234,6 +240,23 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
       this.observeRequest('POST', '500', startedAt);
       throw error;
     }
+  }
+
+  public async resolveApprovalTarget(
+    params: IApprovalTargetRequest,
+  ): Promise<IApprovalTargetResponse> {
+    return resolveOdosApprovalTarget({
+      apiBaseUrl: this.apiBaseUrl,
+      assembleEndpointPath: ASSEMBLE_ENDPOINT_PATH,
+      buildQuotePayload: this.buildQuotePayload.bind(this),
+      defaultSlippagePercent: DEFAULT_SLIPPAGE_PERCENT,
+      observeRequest: this.observeRequest.bind(this),
+      postJson: this.postJson.bind(this),
+      quoteEndpointPath: QUOTE_ENDPOINT_PATH,
+      request: params,
+      validateAssembleResponse: isOdosAssembleResponse,
+      validateQuoteResponse: isOdosQuoteResponse,
+    });
   }
 
   public async healthCheck(): Promise<boolean> {
@@ -334,9 +357,12 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
       throw new BusinessException('Odos shadow quote response schema is invalid');
     }
 
-    const netToAmountBaseUnits = this.getQuoteAmount(input.feeQuoteBody);
-    const grossToAmountBaseUnits = this.getQuoteAmount(input.shadowQuoteBody);
-    const partnerFeePercent = this.getValidatedPartnerFeePercent(input.feeQuoteBody);
+    const netToAmountBaseUnits = getOdosQuoteAmount(input.feeQuoteBody);
+    const grossToAmountBaseUnits = getOdosQuoteAmount(input.shadowQuoteBody);
+    const partnerFeePercent = getValidatedOdosPartnerFeePercent(
+      this.metricsService,
+      input.feeQuoteBody,
+    );
     const feeAmountBaseUnits = (
       BigInt(grossToAmountBaseUnits) - BigInt(netToAmountBaseUnits)
     ).toString();
@@ -376,30 +402,6 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
         partnerFeePercent,
       },
     };
-  }
-
-  private getQuoteAmount(responseBody: IOdosQuoteResponse): string {
-    const quoteAmount = responseBody.outAmounts[0];
-
-    if (quoteAmount === undefined || quoteAmount.trim() === '') {
-      throw new BusinessException('Odos quote amount is missing');
-    }
-
-    return quoteAmount;
-  }
-
-  private getValidatedPartnerFeePercent(responseBody: IOdosQuoteResponse): number {
-    if (responseBody.partnerFeePercent === undefined) {
-      this.metricsService.incrementError('odos_referral_missing_partner_fee_percent');
-      throw new BusinessException('Odos quote does not contain partnerFeePercent');
-    }
-
-    if (!Number.isFinite(responseBody.partnerFeePercent) || responseBody.partnerFeePercent <= 0) {
-      this.metricsService.incrementError('odos_referral_zero_partner_fee');
-      throw new BusinessException('Odos referral code is active but partner fee is zero');
-    }
-
-    return responseBody.partnerFeePercent;
   }
 
   private normalizeTokenAddress(address: string): string {

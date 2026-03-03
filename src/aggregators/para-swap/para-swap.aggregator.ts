@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import type {
+  IApprovalTargetRequest,
+  IApprovalTargetResponse,
+} from '../../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
@@ -37,6 +41,8 @@ const EXCLUDE_METHODS_WITHOUT_FEE_MODEL = 'true';
 interface IParaSwapPriceRoute {
   destAmount: string;
   gasCostUSD?: string;
+  tokenTransferProxy?: string;
+  contractAddress?: string;
 }
 
 interface IParaSwapQuoteResponse {
@@ -189,6 +195,58 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
         to: transactionResponse.body.to,
         data: transactionResponse.body.data,
         value: transactionResponse.body.value,
+      };
+    } catch (error: unknown) {
+      this.observeRequest('500', startedAt);
+      throw error;
+    }
+  }
+
+  public async resolveApprovalTarget(
+    params: IApprovalTargetRequest,
+  ): Promise<IApprovalTargetResponse> {
+    const url = this.buildQuoteUrl({
+      chain: params.chain,
+      sellTokenAddress: params.sellTokenAddress,
+      buyTokenAddress: params.buyTokenAddress,
+      sellAmountBaseUnits: params.sellAmountBaseUnits,
+      sellTokenDecimals: 18,
+      buyTokenDecimals: 6,
+      feeConfig: {
+        kind: 'none',
+        aggregatorName: this.name,
+        chain: params.chain,
+        mode: 'disabled',
+        feeType: 'no fee',
+        feeBps: 0,
+        feeAssetSide: 'none',
+        feeAssetAddress: null,
+        feeAssetSymbol: null,
+        feeAppliedAtQuote: false,
+        feeEnforcedOnExecution: false,
+      },
+    });
+    const startedAt = Date.now();
+
+    try {
+      const response = await this.getJson(url, {});
+      this.observeRequest(response.statusCode.toString(), startedAt);
+
+      if (!isParaSwapQuoteResponse(response.body)) {
+        throw new BusinessException('ParaSwap response schema is invalid');
+      }
+
+      const spenderAddress =
+        response.body.priceRoute.tokenTransferProxy ??
+        response.body.priceRoute.contractAddress ??
+        null;
+
+      if (!spenderAddress || spenderAddress.trim() === '') {
+        throw new BusinessException('ParaSwap tokenTransferProxy is missing');
+      }
+
+      return {
+        spenderAddress,
       };
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);

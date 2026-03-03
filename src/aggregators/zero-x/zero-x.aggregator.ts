@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import type {
+  IApprovalTargetRequest,
+  IApprovalTargetResponse,
+} from '../../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
@@ -30,6 +34,7 @@ interface IZeroXQuoteResponse {
   buyAmount: string;
   liquidityAvailable: boolean;
   totalNetworkFee: string | null;
+  allowanceTarget?: string;
   fees?: {
     integratorFee?: {
       amount: string;
@@ -166,6 +171,56 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
         to: response.body.transaction.to,
         data: response.body.transaction.data,
         value: response.body.transaction.value,
+      };
+    } catch (error: unknown) {
+      this.observeRequest('500', startedAt);
+      throw error;
+    }
+  }
+
+  public async resolveApprovalTarget(
+    params: IApprovalTargetRequest,
+  ): Promise<IApprovalTargetResponse> {
+    const url = this.buildQuoteUrl({
+      chain: params.chain,
+      sellTokenAddress: params.sellTokenAddress,
+      buyTokenAddress: params.buyTokenAddress,
+      sellAmountBaseUnits: params.sellAmountBaseUnits,
+      sellTokenDecimals: 18,
+      buyTokenDecimals: 6,
+      feeConfig: {
+        kind: 'none',
+        aggregatorName: this.name,
+        chain: params.chain,
+        mode: 'disabled',
+        feeType: 'no fee',
+        feeBps: 0,
+        feeAssetSide: 'none',
+        feeAssetAddress: null,
+        feeAssetSymbol: null,
+        feeAppliedAtQuote: false,
+        feeEnforcedOnExecution: false,
+      },
+    });
+    url.searchParams.set('taker', params.userAddress);
+    const startedAt = Date.now();
+
+    try {
+      const response = await this.getJson(url, this.buildHeaders());
+      this.observeRequest(response.statusCode.toString(), startedAt);
+
+      if (!isZeroXQuoteResponse(response.body)) {
+        throw new BusinessException('0x response schema is invalid');
+      }
+
+      const spenderAddress = response.body.allowanceTarget ?? response.body.transaction?.to ?? null;
+
+      if (!spenderAddress || spenderAddress.trim() === '') {
+        throw new BusinessException('0x allowanceTarget is missing');
+      }
+
+      return {
+        spenderAddress,
       };
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);

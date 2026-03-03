@@ -1,3 +1,7 @@
+import type {
+  IApprovalTargetRequest,
+  IApprovalTargetResponse,
+} from '../../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../../chains/interfaces/chain.interface';
 import type {
   FeeAssetSide,
@@ -63,5 +67,6 @@ export interface IAggregator {
 
   getQuote(params: IQuoteRequest): Promise<IQuoteResponse>;
   buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction>;
+  resolveApprovalTarget?(params: IApprovalTargetRequest): Promise<IApprovalTargetResponse>;
   healthCheck(): Promise<boolean>;
 }

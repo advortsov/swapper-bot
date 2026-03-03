@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AggregatorsModule } from './aggregators/aggregators.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { AllowanceModule } from './allowance/allowance.module';
 import { ChainsModule } from './chains/chains.module';
 import { appConfig } from './config/app.config';
 import { validateEnvironment } from './config/env.validation';
@@ -38,6 +39,7 @@ const envFilePath = [
     MetricsModule,
     ChainsModule,
     AggregatorsModule,
+    AllowanceModule,
     TokensModule,
     PriceModule,
     FavoritesModule,

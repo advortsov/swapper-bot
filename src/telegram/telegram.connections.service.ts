@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { Input, type Context } from 'telegraf';
 
 import {
+  buildPreparedApproveMessage,
   buildConnectionSessionMessage,
   buildConnectionStatusMessage,
   buildDisconnectMessage,
@@ -11,6 +12,7 @@ import {
   buildInfoMessage,
 } from './telegram.message-formatters';
 import { createDateTimeFormatter, formatLocalDateTime, formatSwapValidity } from './telegram.time';
+import type { IApproveSessionResponse } from '../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { SUPPORTED_CHAINS } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
@@ -111,6 +113,57 @@ export class TelegramConnectionsService {
     }
 
     await this.replyEvmSession(context, session);
+  }
+
+  public async replyApproveSession(
+    context: Context,
+    session: IApproveSessionResponse,
+  ): Promise<void> {
+    const replyText = this.buildPreparedApproveMessage(session);
+
+    if (session.walletDelivery === 'connected-wallet') {
+      await context.reply(replyText, { parse_mode: 'HTML' });
+      return;
+    }
+
+    if (!session.walletConnectUri) {
+      await context.reply(replyText, { parse_mode: 'HTML' });
+      return;
+    }
+
+    await context.reply(replyText, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: 'Open in MetaMask',
+              url: `${METAMASK_UNIVERSAL_LINK}${encodeURIComponent(session.walletConnectUri)}`,
+            },
+            {
+              text: 'Open in Trust Wallet',
+              url: `${TRUST_WALLET_UNIVERSAL_LINK}${encodeURIComponent(session.walletConnectUri)}`,
+            },
+          ],
+          [
+            {
+              text: 'MetaMask (legacy link)',
+              url: `${METAMASK_LEGACY_LINK}${encodeURIComponent(session.walletConnectUri)}`,
+            },
+          ],
+        ],
+      },
+    });
+    await this.sendQrCode(
+      context,
+      session.walletConnectUri,
+      buildQrCaption(
+        'approve',
+        session.chain,
+        session.sessionId,
+        this.formatSwapValidityText(session.expiresAt),
+      ),
+    );
   }
 
   public isConnectAction(data: string): boolean {
@@ -222,8 +275,25 @@ export class TelegramConnectionsService {
     });
   }
 
+  private buildPreparedApproveMessage(session: IApproveSessionResponse): string {
+    const deliveryHint =
+      session.walletDelivery === 'connected-wallet'
+        ? 'Запрос на approve отправлен в уже подключённый кошелёк.'
+        : 'Открой подключённый EVM-кошелёк и подтверди approve.';
+
+    return buildPreparedApproveMessage({
+      session,
+      expiryText: this.formatSwapValidityText(session.expiresAt),
+      deliveryHint,
+    });
+  }
+
   private formatSwapSessionValidity(session: ISwapSessionResponse): string {
     return formatSwapValidity(this.resolveSoonestExpiry(session.expiresAt, session.quoteExpiresAt));
+  }
+
+  private formatSwapValidityText(expiresAt: string): string {
+    return formatSwapValidity(expiresAt);
   }
 
   private resolveSoonestExpiry(first: string, second: string): string {

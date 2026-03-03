@@ -1,3 +1,4 @@
+import type { IWalletConnectApprovalPayload } from '../../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../../chains/interfaces/chain.interface';
 import type {
   FeeAssetSide,
@@ -39,6 +40,11 @@ export interface ICreateWalletConnectSessionInput {
   swapPayload: IWalletConnectSwapPayload;
 }
 
+export interface ICreateWalletConnectApproveSessionInput {
+  userId: string;
+  approvalPayload: IWalletConnectApprovalPayload;
+}
+
 export interface ICreateWalletConnectConnectionInput {
   userId: string;
   chain: ChainType;
@@ -49,11 +55,12 @@ export interface IWalletConnectSession {
   userId: string;
   uri: string;
   expiresAt: number;
-  kind: 'connect' | 'swap';
+  kind: 'connect' | 'swap' | 'approve';
   family: WalletConnectionFamily;
   chain: ChainType;
   pairingTopic?: string;
   swapPayload?: IWalletConnectSwapPayload;
+  approvalPayload?: IWalletConnectApprovalPayload;
   phantom?: IPhantomSessionState;
 }
 
@@ -85,7 +92,7 @@ export interface IWalletConnectionStatus {
 export interface IPendingTelegramAction {
   token: string;
   userId: string;
-  kind: 'favorite' | 'alert-threshold';
+  kind: 'favorite' | 'alert-threshold' | 'approve';
   payload: Record<string, unknown>;
   createdAt: number;
   expiresAt: number;
