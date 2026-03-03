@@ -82,6 +82,8 @@ export function getWalletConnectionFamily(chain: ChainType): WalletConnectionFam
   return chain === 'solana' ? 'solana' : 'evm';
 }
 
+const EVM_HEX_RADIX = 16;
+
 export function getWalletConnectSwapPayload(
   session: IWalletConnectSession,
 ): IWalletConnectSwapPayload {
@@ -216,13 +218,27 @@ export async function requestWalletConnectExecution(input: {
           from: walletAddress,
           to: transaction.to,
           data: transaction.data,
-          value: transaction.value,
+          value: normalizeEvmQuantity(transaction.value),
         },
       ],
     },
   });
 
   return parseWalletConnectTransactionResult(result);
+}
+
+export function normalizeEvmQuantity(value: string): string {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized.startsWith('0x')) {
+    return normalized;
+  }
+
+  try {
+    return `0x${BigInt(normalized).toString(EVM_HEX_RADIX)}`;
+  } catch {
+    throw new BusinessException(`Invalid EVM quantity: ${value}`);
+  }
 }
 
 export function saveWalletConnection(input: {
@@ -233,9 +249,7 @@ export function saveWalletConnection(input: {
   const { approvedSession, session, walletAddress } = input;
   const now = Date.now();
   const approvedExpiry =
-    typeof approvedSession.expiry === 'number' && approvedSession.expiry > 0
-      ? approvedSession.expiry * 1000
-      : session.expiresAt;
+    approvedSession.expiry > 0 ? approvedSession.expiry * 1000 : session.expiresAt;
 
   return {
     userId: session.userId,
