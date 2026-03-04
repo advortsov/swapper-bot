@@ -2,6 +2,9 @@ import type { ConfigService } from '@nestjs/config';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OdosAggregator } from '../../src/aggregators/odos/odos.aggregator';
+import { OdosExecutionBuilder } from '../../src/aggregators/odos/odos.execution-builder';
+import { OdosMonetizationService } from '../../src/aggregators/odos/odos.monetization.service';
+import { OdosResponseMapper } from '../../src/aggregators/odos/odos.response-mapper';
 import type { MetricsService } from '../../src/metrics/metrics.service';
 import { createDisabledFeeConfig } from '../support/fee.fixtures';
 
@@ -23,7 +26,15 @@ function createAggregator(fetchMock: ReturnType<typeof vi.fn>): OdosAggregator {
 
   vi.stubGlobal('fetch', fetchMock);
 
-  return new OdosAggregator(configService as ConfigService, metricsService as MetricsService);
+  const responseMapper = new OdosResponseMapper(new OdosMonetizationService());
+  const executionBuilder = new OdosExecutionBuilder();
+
+  return new OdosAggregator(
+    configService as ConfigService,
+    metricsService as MetricsService,
+    responseMapper,
+    executionBuilder,
+  );
 }
 
 describe('OdosAggregator', () => {

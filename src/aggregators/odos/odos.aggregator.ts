@@ -2,12 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { resolveOdosApprovalTarget } from './odos.approval-target';
-import { getOdosQuoteAmount, getValidatedOdosPartnerFeePercent } from './odos.quote-helpers';
+import { OdosExecutionBuilder } from './odos.execution-builder';
+import { buildOdosQuotePayload } from './odos.quote-builder';
+import { isOdosAssembleResponse, isOdosQuoteResponse } from './odos.quote-validator';
+import { OdosResponseMapper } from './odos.response-mapper';
+import type { IOdosQuotePayloadInput } from './odos.types';
+import {
+  ASSEMBLE_ENDPOINT_PATH,
+  DEFAULT_QUOTE_USER_ADDRESS,
+  DEFAULT_ODOS_API_BASE_URL,
+  DEFAULT_SLIPPAGE_PERCENT,
+  ODOS_SUPPORTED_CHAINS,
+  QUOTE_ENDPOINT_PATH,
+  REQUEST_TIMEOUT_MS,
+} from './odos.types';
 import type {
   IApprovalTargetRequest,
   IApprovalTargetResponse,
 } from '../../allowance/interfaces/allowance.interface';
-import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
 import { BaseAggregator } from '../base/base.aggregator';
@@ -18,104 +30,6 @@ import type {
   ISwapRequest,
   ISwapTransaction,
 } from '../interfaces/aggregator.interface';
-
-const DEFAULT_ODOS_API_BASE_URL = 'https://api.odos.xyz';
-const QUOTE_ENDPOINT_PATH = '/sor/quote/v2';
-const ASSEMBLE_ENDPOINT_PATH = '/sor/assemble';
-type IEvmChainType = Exclude<ChainType, 'solana'>;
-const ODOS_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
-const CHAIN_ID_BY_CHAIN: Readonly<Record<IEvmChainType, number>> = {
-  ethereum: 1,
-  arbitrum: Number.parseInt('42161', 10),
-  base: Number.parseInt('8453', 10),
-  optimism: 10,
-};
-const ETH_PSEUDO_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-const ODOS_NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000';
-const DEFAULT_QUOTE_USER_ADDRESS = '0x000000000000000000000000000000000000dead';
-const HEALTHCHECK_SELL_TOKEN = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
-const HEALTHCHECK_BUY_TOKEN = '0xdac17f958d2ee523a2206206994597c13d831ec7';
-const HEALTHCHECK_SELL_AMOUNT = '10000000';
-const REQUEST_TIMEOUT_MS = 10_000;
-const DEFAULT_SLIPPAGE_PERCENT = 0.5;
-const PERCENT_TO_BPS_MULTIPLIER = 100;
-const ZERO_FEE_BPS = 0;
-const ZERO_BIGINT = 0n;
-
-interface IOdosQuoteToken {
-  tokenAddress: string;
-  amount: string;
-}
-
-interface IOdosQuoteRequest {
-  chainId: number;
-  inputTokens: readonly IOdosQuoteToken[];
-  outputTokens: readonly { tokenAddress: string; proportion: number }[];
-  slippageLimitPercent: number;
-  userAddr: string;
-  disableRFQs: boolean;
-  compact: boolean;
-  referralCode?: number;
-}
-
-interface IOdosQuoteResponse {
-  outAmounts: readonly string[];
-  pathId: string;
-  gasEstimateValue?: number;
-  partnerFeePercent?: number;
-}
-
-interface IOdosAssembleRequest {
-  userAddr: string;
-  pathId: string;
-  simulate: boolean;
-}
-
-interface IOdosAssembleResponse {
-  transaction: {
-    to: string;
-    data: string;
-    value: string;
-  };
-}
-
-function isOdosQuoteResponse(value: unknown): value is IOdosQuoteResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const outAmounts = candidate['outAmounts'];
-
-  return (
-    typeof candidate['pathId'] === 'string' &&
-    Array.isArray(outAmounts) &&
-    outAmounts.every((item) => typeof item === 'string') &&
-    (candidate['gasEstimateValue'] === undefined ||
-      typeof candidate['gasEstimateValue'] === 'number')
-  );
-}
-
-function isOdosAssembleResponse(value: unknown): value is IOdosAssembleResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const transaction = candidate['transaction'];
-
-  if (typeof transaction !== 'object' || transaction === null) {
-    return false;
-  }
-
-  const tx = transaction as Record<string, unknown>;
-
-  return (
-    typeof tx['to'] === 'string' &&
-    typeof tx['data'] === 'string' &&
-    typeof tx['value'] === 'string'
-  );
-}
 
 @Injectable()
 export class OdosAggregator extends BaseAggregator implements IAggregator {
@@ -128,6 +42,8 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
   public constructor(
     private readonly configService: ConfigService,
     private readonly metricsService: MetricsService,
+    private readonly responseMapper: OdosResponseMapper,
+    private readonly executionBuilder: OdosExecutionBuilder,
   ) {
     super();
     this.apiBaseUrl =
@@ -153,25 +69,20 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
           payload,
         );
         this.observeRequest('POST', response.statusCode.toString(), startedAt);
-
-        return this.createDisabledQuoteResponse(params, response.body);
+        return this.responseMapper.toDisabledQuoteResponse(this.name, params, response.body);
       }
 
-      const feeQuotePayload = {
+      const feeQuoteResponse = await this.postJson(new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl), {
         ...payload,
         referralCode: params.feeConfig.referralCode,
-      };
-      const feeQuoteResponse = await this.postJson(
-        new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl),
-        feeQuotePayload,
-      );
+      });
       const shadowQuoteResponse = await this.postJson(
         new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl),
         payload,
       );
       this.observeRequest('POST', shadowQuoteResponse.statusCode.toString(), startedAt);
 
-      return this.createMonetizedQuoteResponse({
+      return this.responseMapper.toMonetizedQuoteResponse(this.name, this.metricsService, {
         params,
         feeQuoteBody: feeQuoteResponse.body,
         shadowQuoteBody: shadowQuoteResponse.body,
@@ -183,17 +94,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction> {
-    const quotePayload = this.buildQuotePayload({
-      chain: params.chain,
-      sellTokenAddress: params.sellTokenAddress,
-      buyTokenAddress: params.buyTokenAddress,
-      sellAmountBaseUnits: params.sellAmountBaseUnits,
-      userAddress: params.fromAddress,
-      slippageLimitPercent: params.slippagePercentage,
-      ...(params.feeConfig.kind === 'odos' && params.feeConfig.mode === 'enforced'
-        ? { referralCode: params.feeConfig.referralCode }
-        : {}),
-    });
+    const quotePayload = this.executionBuilder.buildQuotePayload(params);
     const startedAt = Date.now();
 
     try {
@@ -201,41 +102,22 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
         new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl),
         quotePayload,
       );
-
-      if (!isOdosQuoteResponse(quoteResponse.body)) {
-        throw new BusinessException('Odos quote response schema is invalid');
-      }
-
-      if (params.feeConfig.kind === 'odos' && params.feeConfig.mode === 'enforced') {
-        getValidatedOdosPartnerFeePercent(this.metricsService, quoteResponse.body);
-      }
-
-      if (quoteResponse.body.pathId.trim() === '') {
-        throw new BusinessException('Odos pathId is missing');
-      }
-
-      const assemblePayload: IOdosAssembleRequest = {
-        userAddr: params.fromAddress,
-        pathId: quoteResponse.body.pathId,
-        simulate: false,
-      };
-
+      this.executionBuilder.validateExecutionQuote(
+        this.metricsService,
+        params.feeConfig,
+        quoteResponse.body,
+      );
       const assembleResponse = await this.postJson(
         new URL(ASSEMBLE_ENDPOINT_PATH, this.apiBaseUrl),
-        assemblePayload,
+        this.executionBuilder.buildAssemblePayload(params.fromAddress, quoteResponse.body.pathId),
       );
       this.observeRequest('POST', assembleResponse.statusCode.toString(), startedAt);
 
-      if (!isOdosAssembleResponse(assembleResponse.body)) {
-        throw new BusinessException('Odos assemble response schema is invalid');
-      }
-
-      return {
-        kind: 'evm',
-        to: assembleResponse.body.transaction.to,
-        data: assembleResponse.body.transaction.data,
-        value: assembleResponse.body.transaction.value,
-      };
+      return this.executionBuilder.buildSwapTransaction(
+        params.fromAddress,
+        quoteResponse.body,
+        assembleResponse.body,
+      );
     } catch (error: unknown) {
       this.observeRequest('POST', '500', startedAt);
       throw error;
@@ -260,14 +142,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async healthCheck(): Promise<boolean> {
-    const payload = this.buildQuotePayload({
-      chain: 'ethereum',
-      sellTokenAddress: HEALTHCHECK_SELL_TOKEN,
-      buyTokenAddress: HEALTHCHECK_BUY_TOKEN,
-      sellAmountBaseUnits: HEALTHCHECK_SELL_AMOUNT,
-      userAddress: DEFAULT_QUOTE_USER_ADDRESS,
-      slippageLimitPercent: DEFAULT_SLIPPAGE_PERCENT,
-    });
+    const payload = this.executionBuilder.createHealthcheckQuotePayload();
 
     try {
       const response = await this.postJson(new URL(QUOTE_ENDPOINT_PATH, this.apiBaseUrl), payload);
@@ -277,149 +152,8 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
     }
   }
 
-  private buildQuotePayload(input: {
-    chain: ChainType;
-    sellTokenAddress: string;
-    buyTokenAddress: string;
-    sellAmountBaseUnits: string;
-    userAddress: string;
-    slippageLimitPercent: number;
-    referralCode?: number;
-  }): IOdosQuoteRequest {
-    return {
-      chainId: this.resolveChainId(input.chain),
-      inputTokens: [
-        {
-          tokenAddress: this.normalizeTokenAddress(input.sellTokenAddress),
-          amount: input.sellAmountBaseUnits,
-        },
-      ],
-      outputTokens: [
-        {
-          tokenAddress: this.normalizeTokenAddress(input.buyTokenAddress),
-          proportion: 1,
-        },
-      ],
-      slippageLimitPercent: input.slippageLimitPercent,
-      userAddr: input.userAddress,
-      disableRFQs: true,
-      compact: true,
-      ...(input.referralCode !== undefined ? { referralCode: input.referralCode } : {}),
-    };
-  }
-
-  private createDisabledQuoteResponse(
-    params: IQuoteRequest,
-    responseBody: unknown,
-  ): IQuoteResponse {
-    if (!isOdosQuoteResponse(responseBody)) {
-      throw new BusinessException('Odos quote response schema is invalid');
-    }
-
-    const quoteAmount = responseBody.outAmounts[0];
-
-    if (quoteAmount === undefined || quoteAmount.trim() === '') {
-      throw new BusinessException('Odos quote amount is missing');
-    }
-
-    return {
-      aggregatorName: this.name,
-      toAmountBaseUnits: quoteAmount,
-      grossToAmountBaseUnits: quoteAmount,
-      feeAmountBaseUnits: '0',
-      feeAmountSymbol: null,
-      feeAmountDecimals: null,
-      feeBps: ZERO_FEE_BPS,
-      feeMode: 'disabled',
-      feeType: 'no fee',
-      feeDisplayLabel: 'no fee',
-      feeAppliedAtQuote: false,
-      feeEnforcedOnExecution: false,
-      feeAssetSide: 'none',
-      executionFee: params.feeConfig,
-      estimatedGasUsd: responseBody.gasEstimateValue ?? null,
-      totalNetworkFeeWei: null,
-      rawQuote: responseBody,
-    };
-  }
-
-  private createMonetizedQuoteResponse(input: {
-    params: IQuoteRequest;
-    feeQuoteBody: unknown;
-    shadowQuoteBody: unknown;
-  }): IQuoteResponse {
-    if (!isOdosQuoteResponse(input.feeQuoteBody)) {
-      throw new BusinessException('Odos quote response schema is invalid');
-    }
-
-    if (!isOdosQuoteResponse(input.shadowQuoteBody)) {
-      this.metricsService.incrementError('odos_referral_shadow_quote_failed');
-      throw new BusinessException('Odos shadow quote response schema is invalid');
-    }
-
-    const netToAmountBaseUnits = getOdosQuoteAmount(input.feeQuoteBody);
-    const grossToAmountBaseUnits = getOdosQuoteAmount(input.shadowQuoteBody);
-    const partnerFeePercent = getValidatedOdosPartnerFeePercent(
-      this.metricsService,
-      input.feeQuoteBody,
-    );
-    const feeAmountBaseUnits = (
-      BigInt(grossToAmountBaseUnits) - BigInt(netToAmountBaseUnits)
-    ).toString();
-
-    if (BigInt(grossToAmountBaseUnits) < BigInt(netToAmountBaseUnits)) {
-      this.metricsService.incrementError('odos_referral_negative_fee_breakdown');
-      throw new BusinessException('Odos quote fee breakdown is inconsistent');
-    }
-
-    if (BigInt(feeAmountBaseUnits) <= ZERO_BIGINT) {
-      this.metricsService.incrementError('odos_referral_negative_fee_breakdown');
-      throw new BusinessException('Odos quote fee breakdown is inconsistent');
-    }
-
-    return {
-      aggregatorName: this.name,
-      toAmountBaseUnits: netToAmountBaseUnits,
-      grossToAmountBaseUnits,
-      feeAmountBaseUnits,
-      feeAmountSymbol: null,
-      feeAmountDecimals: null,
-      feeBps: Math.round(partnerFeePercent * PERCENT_TO_BPS_MULTIPLIER),
-      feeMode: 'enforced',
-      feeType: 'partner fee',
-      feeDisplayLabel: 'partner fee',
-      feeAppliedAtQuote: true,
-      feeEnforcedOnExecution: true,
-      feeAssetSide: 'buy',
-      executionFee: input.params.feeConfig,
-      estimatedGasUsd: input.feeQuoteBody.gasEstimateValue ?? null,
-      totalNetworkFeeWei: null,
-      rawQuote: {
-        feeQuote: input.feeQuoteBody,
-        shadowQuote: input.shadowQuoteBody,
-        referralCode:
-          input.params.feeConfig.kind === 'odos' ? input.params.feeConfig.referralCode : null,
-        partnerFeePercent,
-      },
-    };
-  }
-
-  private normalizeTokenAddress(address: string): string {
-    const normalized = address.trim();
-
-    if (normalized.toLowerCase() === ETH_PSEUDO_ADDRESS) {
-      return ODOS_NATIVE_ADDRESS;
-    }
-
-    return normalized;
-  }
-
-  private resolveChainId(chain: ChainType): number {
-    if (chain === 'solana') {
-      throw new BusinessException('Odos does not support Solana');
-    }
-
-    return CHAIN_ID_BY_CHAIN[chain];
+  private buildQuotePayload(input: IOdosQuotePayloadInput): object {
+    return buildOdosQuotePayload(input);
   }
 
   private buildHeaders(): Record<string, string> {
@@ -454,10 +188,7 @@ export class OdosAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException(`Aggregator request failed with status ${response.status}`);
       }
 
-      return {
-        statusCode: response.status,
-        body: parsedBody,
-      };
+      return { statusCode: response.status, body: parsedBody };
     } catch (error: unknown) {
       if (error instanceof BusinessException) {
         throw error;
