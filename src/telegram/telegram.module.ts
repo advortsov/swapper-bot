@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 
 import { TelegramBot } from './telegram.bot';
+import { TelegramCallbackRouterService } from './telegram.callback-router.service';
+import { TelegramCommandRouterService } from './telegram.command-router.service';
 import { TelegramConnectionsLinksService } from './telegram.connections-links.service';
 import { TelegramConnectionsParserService } from './telegram.connections-parser.service';
 import { TelegramConnectionsReplyService } from './telegram.connections-reply.service';
 import { TelegramConnectionsService } from './telegram.connections.service';
+import { TelegramErrorReplyService } from './telegram.error-reply.service';
 import { TelegramPortfolioAlertsService } from './telegram.portfolio-alerts.service';
 import { TelegramPortfolioFavoritesService } from './telegram.portfolio-favorites.service';
 import { TelegramPortfolioHistoryService } from './telegram.portfolio-history.service';
@@ -12,6 +15,7 @@ import { TelegramPortfolioParserService } from './telegram.portfolio-parser.serv
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramQrService } from './telegram.qr.service';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
+import { TelegramStartHelpService } from './telegram.start-help.service';
 import { TelegramTradingApproveService } from './telegram.trading-approve.service';
 import { TelegramTradingButtonsService } from './telegram.trading-buttons.service';
 import { TelegramTradingParserService } from './telegram.trading-parser.service';
@@ -40,6 +44,10 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
   ],
   providers: [
     TelegramSettingsHandler,
+    TelegramCommandRouterService,
+    TelegramCallbackRouterService,
+    TelegramErrorReplyService,
+    TelegramStartHelpService,
     TelegramConnectionsLinksService,
     TelegramConnectionsParserService,
     TelegramConnectionsReplyService,

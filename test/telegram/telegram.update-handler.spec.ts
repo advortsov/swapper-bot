@@ -1,58 +1,41 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { TelegramConnectionsService } from '../../src/telegram/telegram.connections.service';
-import type { TelegramPortfolioService } from '../../src/telegram/telegram.portfolio.service';
+import type { TelegramCallbackRouterService } from '../../src/telegram/telegram.callback-router.service';
+import type { TelegramCommandRouterService } from '../../src/telegram/telegram.command-router.service';
 import type { TelegramSettingsHandler } from '../../src/telegram/telegram.settings-handler';
-import type { TelegramTradingService } from '../../src/telegram/telegram.trading.service';
+import type { TelegramStartHelpService } from '../../src/telegram/telegram.start-help.service';
 import { TelegramUpdateHandler } from '../../src/telegram/telegram.update-handler';
 
 function createSettingsHandler(): TelegramSettingsHandler {
   return {
     register: vi.fn(),
-    hasPendingInput: vi.fn().mockReturnValue(false),
-    handleTextInput: vi.fn(),
   } as unknown as TelegramSettingsHandler;
 }
 
-function createTradingService(): TelegramTradingService {
+function createCommandRouter(): TelegramCommandRouterService {
   return {
+    handleText: vi.fn(),
     handlePrice: vi.fn(),
-    handleApprove: vi.fn(),
     handleSwap: vi.fn(),
-    isSwapCallback: vi.fn().mockReturnValue(false),
-    isApproveCallback: vi.fn().mockReturnValue(false),
-    handleSwapCallback: vi.fn(),
-    handleApproveCallback: vi.fn(),
-  } as unknown as TelegramTradingService;
-}
-
-function createPortfolioService(): TelegramPortfolioService {
-  return {
-    handleFavorites: vi.fn(),
-    handleHistory: vi.fn(),
-    handleAlertThresholdInput: vi.fn().mockResolvedValue(false),
-    isFavoriteAdd: vi.fn().mockReturnValue(false),
-    isFavoriteCheck: vi.fn().mockReturnValue(false),
-    isFavoriteAlert: vi.fn().mockReturnValue(false),
-    isFavoriteDelete: vi.fn().mockReturnValue(false),
-    handleFavoriteAdd: vi.fn(),
-    handleFavoriteCheck: vi.fn(),
-    handleFavoriteAlert: vi.fn(),
-    handleFavoriteDelete: vi.fn(),
-  } as unknown as TelegramPortfolioService;
-}
-
-function createConnectionsService(): TelegramConnectionsService {
-  return {
+    handleApprove: vi.fn(),
     handleConnect: vi.fn(),
     handleDisconnect: vi.fn(),
-    isConnectAction: vi.fn().mockReturnValue(false),
-    isDisconnectAction: vi.fn().mockReturnValue(false),
-    handleConnectAction: vi.fn(),
-    handleDisconnectAction: vi.fn(),
-    replySwapSession: vi.fn(),
-    replyApproveSession: vi.fn(),
-  } as unknown as TelegramConnectionsService;
+    handleFavorites: vi.fn(),
+    handleHistory: vi.fn(),
+  } as unknown as TelegramCommandRouterService;
+}
+
+function createCallbackRouter(): TelegramCallbackRouterService {
+  return {
+    handleAction: vi.fn(),
+  } as unknown as TelegramCallbackRouterService;
+}
+
+function createStartHelpService(): TelegramStartHelpService {
+  return {
+    handleStart: vi.fn(),
+    handleHelp: vi.fn(),
+  } as unknown as TelegramStartHelpService;
 }
 
 describe('TelegramUpdateHandler', () => {
@@ -60,225 +43,63 @@ describe('TelegramUpdateHandler', () => {
     vi.clearAllMocks();
   });
 
-  it('должен регистрировать команды и проксировать /swap в trading service', async () => {
+  it('должен регистрировать команды и делегировать их в router-сервисы', async () => {
     const registeredCommands = new Map<string, (context: unknown) => Promise<void>>();
+    let actionHandler: ((context: unknown) => Promise<void>) | undefined;
+    let textHandler: ((context: unknown) => Promise<void>) | undefined;
     const bot = {
       command: vi.fn((name: string, handler: (context: unknown) => Promise<void>) => {
         registeredCommands.set(name, handler);
       }),
-      action: vi.fn(),
-      on: vi.fn(),
+      action: vi.fn((_: RegExp, handler: (context: unknown) => Promise<void>) => {
+        actionHandler = handler;
+      }),
+      on: vi.fn((_: unknown, handler: (context: unknown) => Promise<void>) => {
+        textHandler = handler;
+      }),
     };
     const settingsHandler = createSettingsHandler();
-    const tradingService = createTradingService();
-    const portfolioService = createPortfolioService();
-    const connectionsService = createConnectionsService();
+    const commandRouter = createCommandRouter();
+    const callbackRouter = createCallbackRouter();
+    const startHelpService = createStartHelpService();
     const handler = new TelegramUpdateHandler(
       settingsHandler,
-      tradingService,
-      portfolioService,
-      connectionsService,
+      commandRouter,
+      callbackRouter,
+      startHelpService,
     );
 
-    (tradingService.handleSwap as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
     handler.register(bot as never);
 
-    const swapCommandHandler = registeredCommands.get('swap');
-
-    await swapCommandHandler?.({
-      from: { id: 42, username: 'tester' },
-      message: { text: '/swap 1 SOL to USDC on solana' },
+    await registeredCommands.get('start')?.({ reply: vi.fn() });
+    await registeredCommands.get('help')?.({ reply: vi.fn() });
+    await registeredCommands.get('swap')?.({
+      from: { id: 42 },
+      message: { text: '/swap 1 ETH to USDC' },
       reply: vi.fn(),
     });
+    await registeredCommands.get('approve')?.({
+      from: { id: 42 },
+      message: { text: '/approve 10 USDC on ethereum' },
+      reply: vi.fn(),
+    });
+    await registeredCommands.get('favorites')?.({ from: { id: 42 }, reply: vi.fn() });
+    await registeredCommands.get('history')?.({ from: { id: 42 }, reply: vi.fn() });
+    await actionHandler?.({
+      from: { id: 42 },
+      callbackQuery: { data: 'sw:opaque-token' },
+      reply: vi.fn(),
+    });
+    await textHandler?.({ from: { id: 42 }, message: { text: '205' }, reply: vi.fn() });
 
     expect(settingsHandler.register).toHaveBeenCalledWith(bot);
-    expect(tradingService.handleSwap).toHaveBeenCalledWith(
-      expect.anything(),
-      '42',
-      'tester',
-      '/swap 1 SOL to USDC on solana',
-    );
-  });
-
-  it('должен регистрировать команду /approve и проксировать её в trading service', async () => {
-    const registeredCommands = new Map<string, (context: unknown) => Promise<void>>();
-    const bot = {
-      command: vi.fn((name: string, handler: (context: unknown) => Promise<void>) => {
-        registeredCommands.set(name, handler);
-      }),
-      action: vi.fn(),
-      on: vi.fn(),
-    };
-    const settingsHandler = createSettingsHandler();
-    const tradingService = createTradingService();
-    const portfolioService = createPortfolioService();
-    const connectionsService = createConnectionsService();
-    const handler = new TelegramUpdateHandler(
-      settingsHandler,
-      tradingService,
-      portfolioService,
-      connectionsService,
-    );
-
-    (tradingService.handleApprove as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    handler.register(bot as never);
-
-    const approveCommandHandler = registeredCommands.get('approve');
-
-    await approveCommandHandler?.({
-      from: { id: 42, username: 'tester' },
-      message: { text: '/approve 100 USDC on arbitrum' },
-      reply: vi.fn(),
-    });
-
-    expect(tradingService.handleApprove).toHaveBeenCalledWith(
-      expect.anything(),
-      '42',
-      'tester',
-      '/approve 100 USDC on arbitrum',
-    );
-  });
-
-  it('должен показывать подробный /help', async () => {
-    const registeredCommands = new Map<string, (context: unknown) => Promise<void>>();
-    const bot = {
-      command: vi.fn((name: string, handler: (context: unknown) => Promise<void>) => {
-        registeredCommands.set(name, handler);
-      }),
-      action: vi.fn(),
-      on: vi.fn(),
-    };
-    const settingsHandler = createSettingsHandler();
-    const tradingService = createTradingService();
-    const portfolioService = createPortfolioService();
-    const connectionsService = createConnectionsService();
-    const handler = new TelegramUpdateHandler(
-      settingsHandler,
-      tradingService,
-      portfolioService,
-      connectionsService,
-    );
-
-    handler.register(bot as never);
-
-    const helpCommandHandler = registeredCommands.get('help');
-    const reply = vi.fn().mockResolvedValue(undefined);
-
-    await helpCommandHandler?.({
-      from: { id: 42, username: 'tester' },
-      message: { text: '/help' },
-      reply,
-    });
-
-    const messageText = (reply.mock.calls[0] as [string])[0];
-    const replyOptions = (reply.mock.calls[0] as [string, { parse_mode: string }])[1];
-
-    expect(messageText).toContain('ℹ️ <b>Справка по боту</b>');
-    expect(messageText).toContain(
-      '/price &lt;amount&gt; &lt;from&gt; to &lt;to&gt; [on &lt;chain&gt;]',
-    );
-    expect(messageText).toContain(
-      '/swap &lt;amount&gt; &lt;from&gt; to &lt;to&gt; [on &lt;chain&gt;]',
-    );
-    expect(messageText).toContain('/approve &lt;amount&gt; &lt;token&gt; [on &lt;chain&gt;]');
-    expect(messageText).toContain('/connect [on &lt;chain&gt;]');
-    expect(messageText).toContain('/disconnect [on &lt;chain&gt;]');
-    expect(messageText).toContain('/favorites');
-    expect(messageText).toContain('/history');
-    expect(messageText).toContain('/settings');
-    expect(messageText).toContain('<b>Поддерживаемые сети</b>');
-    expect(replyOptions.parse_mode).toBe('HTML');
-  });
-
-  it('должен маршрутизировать swap callback в trading service', async () => {
-    const registeredActions = new Map<string, (context: unknown) => Promise<void>>();
-    const bot = {
-      command: vi.fn(),
-      action: vi.fn((pattern: RegExp, handler: (context: unknown) => Promise<void>) => {
-        registeredActions.set(pattern.source, handler);
-      }),
-      on: vi.fn(),
-    };
-    const settingsHandler = createSettingsHandler();
-    const tradingService = createTradingService();
-    const portfolioService = createPortfolioService();
-    const connectionsService = createConnectionsService();
-    const handler = new TelegramUpdateHandler(
-      settingsHandler,
-      tradingService,
-      portfolioService,
-      connectionsService,
-    );
-
-    (tradingService.isSwapCallback as ReturnType<typeof vi.fn>).mockImplementation((data: string) =>
-      data.startsWith('sw:'),
-    );
-    (tradingService.handleSwapCallback as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    handler.register(bot as never);
-
-    const actionHandler = registeredActions.get('.*');
-
-    await actionHandler?.({
-      from: { id: 42 },
-      callbackQuery: {
-        from: { id: 42 },
-        data: 'sw:opaque-token',
-      },
-      answerCbQuery: vi.fn(),
-      reply: vi.fn(),
-    });
-
-    expect(tradingService.handleSwapCallback).toHaveBeenCalledWith(
-      expect.anything(),
-      '42',
-      'sw:opaque-token',
-      connectionsService,
-    );
-  });
-
-  it('должен маршрутизировать approve callback в trading service', async () => {
-    const registeredActions = new Map<string, (context: unknown) => Promise<void>>();
-    const bot = {
-      command: vi.fn(),
-      action: vi.fn((pattern: RegExp, handler: (context: unknown) => Promise<void>) => {
-        registeredActions.set(pattern.source, handler);
-      }),
-      on: vi.fn(),
-    };
-    const settingsHandler = createSettingsHandler();
-    const tradingService = createTradingService();
-    const portfolioService = createPortfolioService();
-    const connectionsService = createConnectionsService();
-    const handler = new TelegramUpdateHandler(
-      settingsHandler,
-      tradingService,
-      portfolioService,
-      connectionsService,
-    );
-
-    (tradingService.isApproveCallback as ReturnType<typeof vi.fn>).mockImplementation(
-      (data: string) => data.startsWith('apr:'),
-    );
-    (tradingService.handleApproveCallback as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    handler.register(bot as never);
-
-    const actionHandler = registeredActions.get('.*');
-
-    await actionHandler?.({
-      from: { id: 42 },
-      callbackQuery: {
-        from: { id: 42 },
-        data: 'apr:token:paraswap:exact',
-      },
-      answerCbQuery: vi.fn(),
-      reply: vi.fn(),
-    });
-
-    expect(tradingService.handleApproveCallback).toHaveBeenCalledWith(
-      expect.anything(),
-      '42',
-      'apr:token:paraswap:exact',
-      connectionsService,
-    );
+    expect(startHelpService.handleStart).toHaveBeenCalledOnce();
+    expect(startHelpService.handleHelp).toHaveBeenCalledOnce();
+    expect(commandRouter.handleSwap).toHaveBeenCalledOnce();
+    expect(commandRouter.handleApprove).toHaveBeenCalledOnce();
+    expect(commandRouter.handleFavorites).toHaveBeenCalledOnce();
+    expect(commandRouter.handleHistory).toHaveBeenCalledOnce();
+    expect(commandRouter.handleText).toHaveBeenCalledOnce();
+    expect(callbackRouter.handleAction).toHaveBeenCalledOnce();
   });
 });
