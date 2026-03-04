@@ -15,6 +15,10 @@ import { TelegramPortfolioParserService } from './telegram.portfolio-parser.serv
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramQrService } from './telegram.qr.service';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
+import { TelegramSettingsMenuService } from './telegram.settings-menu.service';
+import { TelegramSettingsParserService } from './telegram.settings-parser.service';
+import { TelegramSettingsPersistenceService } from './telegram.settings-persistence.service';
+import { TelegramSettingsReplyService } from './telegram.settings-reply.service';
 import { TelegramStartHelpService } from './telegram.start-help.service';
 import { TelegramTradingApproveService } from './telegram.trading-approve.service';
 import { TelegramTradingButtonsService } from './telegram.trading-buttons.service';
@@ -48,6 +52,10 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
     TelegramCallbackRouterService,
     TelegramErrorReplyService,
     TelegramStartHelpService,
+    TelegramSettingsMenuService,
+    TelegramSettingsParserService,
+    TelegramSettingsPersistenceService,
+    TelegramSettingsReplyService,
     TelegramConnectionsLinksService,
     TelegramConnectionsParserService,
     TelegramConnectionsReplyService,

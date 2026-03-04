@@ -1,40 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Context, Telegraf } from 'telegraf';
-import type { InlineKeyboardButton, Message } from 'telegraf/typings/core/types/typegram';
+import type { Message } from 'telegraf/typings/core/types/typegram';
 
-import {
-  buildAggregatorMenuMessage,
-  buildCustomSlippagePrompt,
-  buildErrorMessage,
-  buildSettingsMenuMessage,
-  buildSlippageMenuMessage,
-} from './telegram.message-formatters';
+import { TelegramSettingsMenuService } from './telegram.settings-menu.service';
+import { TelegramSettingsParserService } from './telegram.settings-parser.service';
+import { TelegramSettingsPersistenceService } from './telegram.settings-persistence.service';
+import { TelegramSettingsReplyService } from './telegram.settings-reply.service';
 import { BusinessException } from '../common/exceptions/business.exception';
-import type { IUserSettings } from '../settings/interfaces/user-settings.interface';
-import { UserSettingsService } from '../settings/user-settings.service';
-
-const CALLBACK_PREFIX = 's:';
-
-const SLIPPAGE_PRESET_LOW = 0.1;
-const SLIPPAGE_PRESET_DEFAULT = 0.5;
-const SLIPPAGE_PRESET_MEDIUM = 1;
-const SLIPPAGE_PRESET_HIGH = 3;
-const SLIPPAGE_PRESETS = [
-  SLIPPAGE_PRESET_LOW,
-  SLIPPAGE_PRESET_DEFAULT,
-  SLIPPAGE_PRESET_MEDIUM,
-  SLIPPAGE_PRESET_HIGH,
-] as const;
-const MIN_CUSTOM_SLIPPAGE = 0.01;
-const MAX_CUSTOM_SLIPPAGE = 50;
-
-const AGGREGATOR_OPTIONS: readonly { value: string; label: string }[] = [
-  { value: 'auto', label: 'Авто (лучшая цена)' },
-  { value: 'paraswap', label: 'ParaSwap' },
-  { value: 'zerox', label: '0x' },
-  { value: 'odos', label: 'Odos' },
-  { value: 'jupiter', label: 'Jupiter (Solana)' },
-];
 
 interface IPendingInput {
   field: 'slippage';
@@ -46,12 +18,17 @@ export class TelegramSettingsHandler {
   private readonly logger = new Logger(TelegramSettingsHandler.name);
   private readonly pendingInputs = new Map<string, IPendingInput>();
 
-  public constructor(private readonly userSettingsService: UserSettingsService) {}
+  public constructor(
+    private readonly parserService: TelegramSettingsParserService,
+    private readonly persistenceService: TelegramSettingsPersistenceService,
+    private readonly replyService: TelegramSettingsReplyService,
+    private readonly menuService: TelegramSettingsMenuService,
+  ) {}
 
   public register(bot: Telegraf): void {
     bot.command('settings', async (context: Context) => this.handleSettingsCommand(context));
 
-    bot.action(new RegExp(`^${CALLBACK_PREFIX}`), async (context: Context) =>
+    bot.action(this.parserService.getCallbackPattern(), async (context: Context) =>
       this.handleCallback(context),
     );
   }
@@ -77,15 +54,12 @@ export class TelegramSettingsHandler {
     this.pendingInputs.delete(userId);
 
     const message = context.message as Message | undefined;
-    const text =
-      message && 'text' in message && typeof message.text === 'string' ? message.text.trim() : '';
+    const text = this.parserService.parseText(message);
 
     if (text === '') {
-      await context.reply(
-        buildErrorMessage('Значение не распознано. Попробуй ещё раз через /settings.'),
-        {
-          parse_mode: 'HTML',
-        },
+      await this.replyService.replyError(
+        context,
+        'Значение не распознано. Попробуй ещё раз через /settings.',
       );
       return;
     }
@@ -104,19 +78,15 @@ export class TelegramSettingsHandler {
     this.pendingInputs.delete(userId);
 
     try {
-      const settings = await this.userSettingsService.getSettings(userId);
+      const settings = await this.persistenceService.getSettings(userId);
 
-      await context.reply(this.buildMainMenuText(settings), {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: this.buildMainMenuKeyboard(),
-        },
-      });
+      await this.replyService.replyMainMenu(context, settings);
     } catch (error: unknown) {
       this.logger.error(`Settings command failed: ${this.getErrorMessage(error)}`);
-      await context.reply(buildErrorMessage('Не удалось загрузить настройки. Попробуй позже.'), {
-        parse_mode: 'HTML',
-      });
+      await this.replyService.replyError(
+        context,
+        'Не удалось загрузить настройки. Попробуй позже.',
+      );
     }
   }
 
@@ -134,7 +104,7 @@ export class TelegramSettingsHandler {
     this.pendingInputs.delete(userId);
 
     try {
-      await this.routeCallback(context, userId, data);
+      await this.routeCallback(context, userId, this.parserService.parseCallback(data));
     } catch (error: unknown) {
       const message = this.getErrorMessage(error);
       this.logger.error(`Settings callback failed: ${message}`);
@@ -142,100 +112,56 @@ export class TelegramSettingsHandler {
     }
   }
 
-  private async routeCallback(context: Context, userId: string, data: string): Promise<void> {
-    if (data === 's:menu') {
-      await this.showMainMenu(context, userId);
-      return;
+  private async routeCallback(
+    context: Context,
+    userId: string,
+    action: ReturnType<TelegramSettingsParserService['parseCallback']>,
+  ): Promise<void> {
+    switch (action.kind) {
+      case 'menu':
+        await this.showMainMenu(context, userId);
+        return;
+      case 'slippage-menu':
+        await this.showSlippageMenu(context);
+        return;
+      case 'slippage-custom':
+        await this.requestCustomSlippage(context, userId);
+        return;
+      case 'slippage-value':
+        await this.setSlippage(context, userId, action.value);
+        return;
+      case 'aggregator-menu':
+        await this.showAggregatorMenu(context, userId);
+        return;
+      case 'aggregator-value':
+        await this.setAggregator(context, userId, action.aggregatorName);
+        return;
+      default:
+        await context.answerCbQuery('Неизвестная команда');
     }
-
-    if (data === 's:slip:menu') {
-      await this.showSlippageMenu(context);
-      return;
-    }
-
-    if (data === 's:slip:custom') {
-      await this.requestCustomSlippage(context, userId);
-      return;
-    }
-
-    if (data.startsWith('s:slip:')) {
-      const value = Number.parseFloat(data.slice('s:slip:'.length));
-      await this.setSlippage(context, userId, value);
-      return;
-    }
-
-    if (data === 's:agg:menu') {
-      await this.showAggregatorMenu(context, userId);
-      return;
-    }
-
-    if (data.startsWith('s:agg:')) {
-      const aggregatorName = data.slice('s:agg:'.length);
-      await this.setAggregator(context, userId, aggregatorName);
-      return;
-    }
-
-    await context.answerCbQuery('Неизвестная команда');
   }
 
   private async showMainMenu(context: Context, userId: string): Promise<void> {
-    const settings = await this.userSettingsService.getSettings(userId);
-
-    await context.editMessageText(this.buildMainMenuText(settings), {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: this.buildMainMenuKeyboard(),
-      },
-    });
+    const settings = await this.persistenceService.getSettings(userId);
+    await this.replyService.editMainMenu(context, settings);
     await context.answerCbQuery();
   }
 
   private async showSlippageMenu(context: Context): Promise<void> {
-    const presetButtons: InlineKeyboardButton[] = SLIPPAGE_PRESETS.map((value) => ({
-      text: `${value}%`,
-      callback_data: `s:slip:${value}`,
-    }));
-
-    await context.editMessageText(buildSlippageMenuMessage(), {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: [
-          presetButtons,
-          [{ text: 'Ввести вручную', callback_data: 's:slip:custom' }],
-          [{ text: 'Назад', callback_data: 's:menu' }],
-        ],
-      },
-    });
+    await this.replyService.editSlippageMenu(context);
     await context.answerCbQuery();
   }
 
   private async showAggregatorMenu(context: Context, userId: string): Promise<void> {
-    const settings = await this.userSettingsService.getSettings(userId);
-    const buttons: InlineKeyboardButton[][] = [];
-
-    for (const option of AGGREGATOR_OPTIONS) {
-      const prefix = settings.preferredAggregator === option.value ? '\u2705 ' : '';
-      buttons.push([{ text: `${prefix}${option.label}`, callback_data: `s:agg:${option.value}` }]);
-    }
-
-    buttons.push([{ text: 'Назад', callback_data: 's:menu' }]);
-
-    await context.editMessageText(buildAggregatorMenuMessage(), {
-      parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: buttons },
-    });
+    const settings = await this.persistenceService.getSettings(userId);
+    await this.replyService.editAggregatorMenu(context, settings);
     await context.answerCbQuery();
   }
 
   private async setSlippage(context: Context, userId: string, value: number): Promise<void> {
-    const updated = await this.userSettingsService.updateSlippage(userId, value);
+    const updated = await this.persistenceService.updateSlippage(userId, value);
 
-    await context.editMessageText(this.buildMainMenuText(updated), {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: this.buildMainMenuKeyboard(),
-      },
-    });
+    await this.replyService.editMainMenu(context, updated);
     await context.answerCbQuery(`Slippage: ${value}%`);
   }
 
@@ -244,19 +170,10 @@ export class TelegramSettingsHandler {
     userId: string,
     aggregatorName: string,
   ): Promise<void> {
-    const updated = await this.userSettingsService.updatePreferredAggregator(
-      userId,
-      aggregatorName,
-    );
+    const updated = await this.persistenceService.updatePreferredAggregator(userId, aggregatorName);
 
-    await context.editMessageText(this.buildMainMenuText(updated), {
-      parse_mode: 'HTML',
-      reply_markup: {
-        inline_keyboard: this.buildMainMenuKeyboard(),
-      },
-    });
-    const label =
-      AGGREGATOR_OPTIONS.find((option) => option.value === aggregatorName)?.label ?? aggregatorName;
+    await this.replyService.editMainMenu(context, updated);
+    const label = this.menuService.getAggregatorLabel(aggregatorName);
     await context.answerCbQuery(`Агрегатор: ${label}`);
   }
 
@@ -269,12 +186,7 @@ export class TelegramSettingsHandler {
 
     this.pendingInputs.set(userId, { field: 'slippage', chatId });
 
-    await context.editMessageText(
-      buildCustomSlippagePrompt(MIN_CUSTOM_SLIPPAGE, MAX_CUSTOM_SLIPPAGE),
-      {
-        parse_mode: 'HTML',
-      },
-    );
+    await this.replyService.editCustomSlippagePrompt(context);
     await context.answerCbQuery();
   }
 
@@ -283,48 +195,15 @@ export class TelegramSettingsHandler {
     userId: string,
     text: string,
   ): Promise<void> {
-    const value = Number.parseFloat(text.replace(',', '.'));
-
-    if (!Number.isFinite(value) || value < MIN_CUSTOM_SLIPPAGE || value > MAX_CUSTOM_SLIPPAGE) {
-      await context.reply(
-        buildErrorMessage(
-          `Некорректное значение. Slippage должен быть от ${MIN_CUSTOM_SLIPPAGE}% до ${MAX_CUSTOM_SLIPPAGE}%.`,
-        ),
-        { parse_mode: 'HTML' },
-      );
-      return;
-    }
-
     try {
-      const updated = await this.userSettingsService.updateSlippage(userId, value);
+      const value = this.persistenceService.parseCustomSlippage(text);
+      const updated = await this.persistenceService.updateSlippage(userId, value);
 
-      await context.reply(this.buildMainMenuText(updated), {
-        parse_mode: 'HTML',
-        reply_markup: {
-          inline_keyboard: this.buildMainMenuKeyboard(),
-        },
-      });
+      await this.replyService.replyMainMenu(context, updated);
     } catch (error: unknown) {
       const message = this.getErrorMessage(error);
-      await context.reply(buildErrorMessage(message), { parse_mode: 'HTML' });
+      await this.replyService.replyError(context, message);
     }
-  }
-
-  private buildMainMenuText(settings: IUserSettings): string {
-    const aggregatorLabel =
-      AGGREGATOR_OPTIONS.find((option) => option.value === settings.preferredAggregator)?.label ??
-      settings.preferredAggregator;
-
-    return buildSettingsMenuMessage(`${settings.slippage}`, aggregatorLabel);
-  }
-
-  private buildMainMenuKeyboard(): InlineKeyboardButton[][] {
-    return [
-      [
-        { text: 'Slippage', callback_data: 's:slip:menu' },
-        { text: 'Агрегатор', callback_data: 's:agg:menu' },
-      ],
-    ];
   }
 
   private getErrorMessage(error: unknown): string {
