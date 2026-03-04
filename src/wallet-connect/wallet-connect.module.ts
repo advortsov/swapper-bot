@@ -7,6 +7,10 @@ import { WalletConnectConnectedWalletService } from './wallet-connect.connected-
 import { WalletConnectConnectionService } from './wallet-connect.connection.service';
 import { WalletConnectController } from './wallet-connect.controller';
 import { WalletConnectLifecycleService } from './wallet-connect.lifecycle.service';
+import { WalletConnectPhantomLinksService } from './wallet-connect.phantom-links.service';
+import { WalletConnectPhantomMessagingService } from './wallet-connect.phantom-messaging.service';
+import { WalletConnectPhantomStateService } from './wallet-connect.phantom-state.service';
+import { WalletConnectPhantomTransactionService } from './wallet-connect.phantom-transaction.service';
 import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
 import { WalletConnectService } from './wallet-connect.service';
 import { WalletConnectSessionOrchestrator } from './wallet-connect.session-orchestrator';
@@ -31,7 +35,11 @@ import { SwapModule } from '../swap/swap.module';
     WalletConnectConnectedWalletService,
     WalletConnectConnectionService,
     WalletConnectLifecycleService,
+    WalletConnectPhantomLinksService,
+    WalletConnectPhantomMessagingService,
     WalletConnectPhantomService,
+    WalletConnectPhantomStateService,
+    WalletConnectPhantomTransactionService,
     WalletConnectService,
     WalletConnectSessionOrchestrator,
     WalletConnectSessionStore,

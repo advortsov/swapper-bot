@@ -7,6 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IAggregator } from '../../src/aggregators/interfaces/aggregator.interface';
 import type { SolanaChain } from '../../src/chains/solana/solana.chain';
 import type { SwapExecutionAuditService } from '../../src/swap/swap-execution-audit.service';
+import { WalletConnectPhantomLinksService } from '../../src/wallet-connect/wallet-connect.phantom-links.service';
+import { WalletConnectPhantomMessagingService } from '../../src/wallet-connect/wallet-connect.phantom-messaging.service';
+import { WalletConnectPhantomStateService } from '../../src/wallet-connect/wallet-connect.phantom-state.service';
+import { WalletConnectPhantomTransactionService } from '../../src/wallet-connect/wallet-connect.phantom-transaction.service';
 import { WalletConnectPhantomService } from '../../src/wallet-connect/wallet-connect.phantom.service';
 import { WalletConnectSessionStore } from '../../src/wallet-connect/wallet-connect.session-store';
 import { createDisabledFeeConfig } from '../support/fee.fixtures';
@@ -73,17 +77,40 @@ describe('WalletConnectPhantomService', () => {
     const solanaChain: Pick<SolanaChain, 'broadcastSignedTransaction'> = {
       broadcastSignedTransaction: vi.fn().mockResolvedValue('solana-signature'),
     };
-    const service = new WalletConnectPhantomService(
+    const stateService = new WalletConnectPhantomStateService(
       configService as ConfigService,
       sessionStore,
-      auditService as SwapExecutionAuditService,
+    );
+    const linksService = new WalletConnectPhantomLinksService(
+      configService as ConfigService,
+      sessionStore,
+    );
+    const messagingService = new WalletConnectPhantomMessagingService(
+      configService as ConfigService,
+    );
+    const transactionService = new WalletConnectPhantomTransactionService(
+      configService as ConfigService,
       solanaChain as SolanaChain,
+      [aggregator],
+    );
+    const service = new WalletConnectPhantomService(
+      linksService,
+      messagingService,
+      stateService,
+      transactionService,
     );
     (
       service as unknown as {
-        aggregators: readonly IAggregator[];
+        sessionStore: WalletConnectSessionStore;
+        swapExecutionAuditService: SwapExecutionAuditService;
       }
-    ).aggregators = [aggregator];
+    ).sessionStore = sessionStore;
+    (
+      service as unknown as {
+        sessionStore: WalletConnectSessionStore;
+        swapExecutionAuditService: SwapExecutionAuditService;
+      }
+    ).swapExecutionAuditService = auditService as SwapExecutionAuditService;
 
     const session = await service.createSession({
       userId: '12345',
