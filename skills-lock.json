@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "code-refactoring": {
+      "source": "supercent-io/skills-template",
+      "sourceType": "github",
+      "computedHash": "3aeb03df66d302060e25155a7dde3f5927a83c8055d90456447233fba70e890b"
+    },
     "github": {
       "source": "callstackincubator/agent-skills",
       "sourceType": "github",

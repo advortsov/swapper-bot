@@ -1,8 +1,15 @@
 import { Module, forwardRef } from '@nestjs/common';
 
+import { WalletConnectApprovalRegistry } from './wallet-connect.approval-registry';
+import { WalletConnectApprovedSessionService } from './wallet-connect.approved-session.service';
+import { WalletConnectClientService } from './wallet-connect.client.service';
+import { WalletConnectConnectedWalletService } from './wallet-connect.connected-wallet.service';
+import { WalletConnectConnectionService } from './wallet-connect.connection.service';
 import { WalletConnectController } from './wallet-connect.controller';
+import { WalletConnectLifecycleService } from './wallet-connect.lifecycle.service';
 import { WalletConnectPhantomService } from './wallet-connect.phantom.service';
 import { WalletConnectService } from './wallet-connect.service';
+import { WalletConnectSessionOrchestrator } from './wallet-connect.session-orchestrator';
 import { WalletConnectSessionStore } from './wallet-connect.session-store';
 import { AggregatorsModule } from '../aggregators/aggregators.module';
 import { AllowanceModule } from '../allowance/allowance.module';
@@ -17,7 +24,18 @@ import { SwapModule } from '../swap/swap.module';
     forwardRef(() => SwapModule),
   ],
   controllers: [WalletConnectController],
-  providers: [WalletConnectSessionStore, WalletConnectPhantomService, WalletConnectService],
+  providers: [
+    WalletConnectApprovalRegistry,
+    WalletConnectApprovedSessionService,
+    WalletConnectClientService,
+    WalletConnectConnectedWalletService,
+    WalletConnectConnectionService,
+    WalletConnectLifecycleService,
+    WalletConnectPhantomService,
+    WalletConnectService,
+    WalletConnectSessionOrchestrator,
+    WalletConnectSessionStore,
+  ],
   exports: [WalletConnectService, WalletConnectSessionStore],
 })
 export class WalletConnectModule {}
