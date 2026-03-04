@@ -11,7 +11,11 @@ import type { IChain, ChainType } from '../../src/chains/interfaces/chain.interf
 import type { IFeePolicy } from '../../src/fees/interfaces/fee-policy.interface';
 import { QuoteMonetizationService } from '../../src/fees/quote-monetization.service';
 import type { IPriceRequest } from '../../src/price/interfaces/price.interface';
+import { PriceProvidersService } from '../../src/price/price.providers.service';
 import { PriceQuoteService } from '../../src/price/price.quote.service';
+import { PriceRankingService } from '../../src/price/price.ranking.service';
+import { PriceResultBuilder } from '../../src/price/price.result-builder';
+import { PriceTokenResolutionService } from '../../src/price/price.token-resolution.service';
 import type { ITokenRecord } from '../../src/tokens/tokens.repository';
 import { createDisabledFeeConfig, createQuoteResponse } from '../support/fee.fixtures';
 
@@ -153,11 +157,19 @@ function createService(
     feePolicyService as never,
   );
 
-  return new PriceQuoteService(
-    aggregators,
+  const tokenResolutionService = new PriceTokenResolutionService(
     chains,
-    quoteMonetizationService,
     tokenAddressResolverService as never,
+  );
+  const providersService = new PriceProvidersService(aggregators, quoteMonetizationService);
+  const rankingService = new PriceRankingService();
+  const resultBuilder = new PriceResultBuilder();
+
+  return new PriceQuoteService(
+    tokenResolutionService,
+    providersService,
+    rankingService,
+    resultBuilder,
   );
 }
 

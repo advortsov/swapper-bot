@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { IQuoteSelection, IPreparedPriceInput } from '../../src/price/price.quote.service';
 import type { PriceQuoteService } from '../../src/price/price.quote.service';
+import type { IQuoteSelection, IPreparedPriceInput } from '../../src/price/price.quote.types';
 import type { UserSettingsService } from '../../src/settings/user-settings.service';
 import type { SwapIntentService } from '../../src/swap/swap-intent.service';
 import { SwapService } from '../../src/swap/swap.service';

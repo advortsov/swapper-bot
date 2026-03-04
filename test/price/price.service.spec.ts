@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { IPriceResponse } from '../../src/price/interfaces/price.interface';
-import type { IPreparedPriceInput, IQuoteSelection } from '../../src/price/price.quote.service';
 import type { PriceQuoteService } from '../../src/price/price.quote.service';
+import type { IPreparedPriceInput, IQuoteSelection } from '../../src/price/price.quote.types';
 import type { PriceRuntimeService } from '../../src/price/price.runtime.service';
 import { PriceService } from '../../src/price/price.service';
 import type { UserSettingsService } from '../../src/settings/user-settings.service';

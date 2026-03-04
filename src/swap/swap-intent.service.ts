@@ -10,7 +10,7 @@ import {
 } from '../database/repositories/swap-intents.repository';
 import { MetricsService } from '../metrics/metrics.service';
 import type { IProviderQuote } from '../price/interfaces/price.interface';
-import type { IQuoteSelection, IPreparedPriceInput } from '../price/price.quote.service';
+import type { IQuoteSelection, IPreparedPriceInput } from '../price/price.quote.types';
 import type {
   IConsumedSwapIntent,
   IStoredProviderQuoteSnapshot,
