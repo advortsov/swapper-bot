@@ -1,11 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { buildParaSwapQuoteUrl, buildParaSwapHealthcheckUrl } from './para-swap.quote-builder';
+import {
+  extractParaSwapApprovalTarget,
+  isParaSwapQuoteResponse,
+  isParaSwapTransactionResponse,
+  toParaSwapQuoteResponse,
+} from './para-swap.response-mapper';
+import {
+  buildParaSwapTransactionBody,
+  buildParaSwapTransactionUrl,
+} from './para-swap.transaction-builder';
+import {
+  DEFAULT_PARASWAP_API_BASE_URL,
+  DEFAULT_PARASWAP_API_VERSION,
+  ERROR_BODY_MAX_LENGTH,
+  PARASWAP_SUPPORTED_CHAINS,
+  REQUEST_TIMEOUT_MS,
+} from './para-swap.types';
 import type {
   IApprovalTargetRequest,
   IApprovalTargetResponse,
 } from '../../allowance/interfaces/allowance.interface';
-import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
 import { BaseAggregator } from '../base/base.aggregator';
@@ -16,78 +33,6 @@ import type {
   ISwapRequest,
   ISwapTransaction,
 } from '../interfaces/aggregator.interface';
-
-const DEFAULT_PARASWAP_API_BASE_URL = 'https://api.paraswap.io';
-type IEvmChainType = Exclude<ChainType, 'solana'>;
-const PARASWAP_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
-const NETWORK_BY_CHAIN: Readonly<Record<IEvmChainType, string>> = {
-  ethereum: '1',
-  arbitrum: '42161',
-  base: '8453',
-  optimism: '10',
-};
-const SELL_SIDE = 'SELL';
-const PARASWAP_NATIVE_TOKEN = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-const USDC_TOKEN = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
-const USDC_DECIMALS = '6';
-const WETH_DECIMALS = '18';
-const HEALTHCHECK_SELL_AMOUNT = '1000000000000000';
-const ZERO_BIGINT = 0n;
-const REQUEST_TIMEOUT_MS = 10_000;
-const ERROR_BODY_MAX_LENGTH = 300;
-const DEFAULT_PARASWAP_API_VERSION = '6.2';
-const EXCLUDE_METHODS_WITHOUT_FEE_MODEL = 'true';
-
-interface IParaSwapPriceRoute {
-  destAmount: string;
-  gasCostUSD?: string;
-  tokenTransferProxy?: string;
-  contractAddress?: string;
-}
-
-interface IParaSwapQuoteResponse {
-  priceRoute: IParaSwapPriceRoute & Record<string, unknown>;
-}
-
-interface IParaSwapTransactionResponse {
-  to: string;
-  data: string;
-  value: string;
-}
-
-function isParaSwapQuoteResponse(value: unknown): value is IParaSwapQuoteResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  const priceRoute = record['priceRoute'];
-
-  if (typeof priceRoute !== 'object' || priceRoute === null) {
-    return false;
-  }
-
-  const routeRecord = priceRoute as Record<string, unknown>;
-  const gasCostUSD = routeRecord['gasCostUSD'];
-
-  return (
-    typeof routeRecord['destAmount'] === 'string' &&
-    (gasCostUSD === undefined || typeof gasCostUSD === 'string')
-  );
-}
-
-function isParaSwapTransactionResponse(value: unknown): value is IParaSwapTransactionResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record['to'] === 'string' &&
-    typeof record['data'] === 'string' &&
-    typeof record['value'] === 'string'
-  );
-}
 
 @Injectable()
 export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
@@ -109,7 +54,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async getQuote(params: IQuoteRequest): Promise<IQuoteResponse> {
-    const url = this.buildQuoteUrl(params);
+    const url = buildParaSwapQuoteUrl(this.apiBaseUrl, this.apiVersion, params);
     const startedAt = Date.now();
 
     try {
@@ -120,27 +65,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('ParaSwap response schema is invalid');
       }
 
-      this.ensurePositiveAmount(response.body.priceRoute.destAmount);
-
-      return {
-        aggregatorName: this.name,
-        toAmountBaseUnits: response.body.priceRoute.destAmount,
-        grossToAmountBaseUnits: response.body.priceRoute.destAmount,
-        feeAmountBaseUnits: '0',
-        feeAmountSymbol: null,
-        feeAmountDecimals: null,
-        feeBps: 0,
-        feeMode: 'disabled',
-        feeType: 'no fee',
-        feeDisplayLabel: 'no fee',
-        feeAppliedAtQuote: false,
-        feeEnforcedOnExecution: false,
-        feeAssetSide: 'none',
-        executionFee: params.feeConfig,
-        estimatedGasUsd: this.parseGasUsd(response.body.priceRoute.gasCostUSD),
-        totalNetworkFeeWei: null,
-        rawQuote: response.body,
-      };
+      return toParaSwapQuoteResponse(this.name, params, response.body);
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);
       throw error;
@@ -148,7 +73,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction> {
-    const priceUrl = this.buildQuoteUrl({
+    const priceUrl = buildParaSwapQuoteUrl(this.apiBaseUrl, this.apiVersion, {
       chain: params.chain,
       sellTokenAddress: params.sellTokenAddress,
       buyTokenAddress: params.buyTokenAddress,
@@ -166,23 +91,10 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('ParaSwap response schema is invalid');
       }
 
-      const transactionUrl = new URL('/transactions/1', this.apiBaseUrl);
-      const network = this.resolveNetwork(params.chain);
-      transactionUrl.pathname = `/transactions/${network}`;
-      transactionUrl.searchParams.set('ignoreChecks', 'true');
-
-      const transactionResponse = await this.postJson(transactionUrl, {
-        srcToken: this.normalizeToken(params.sellTokenAddress),
-        destToken: this.normalizeToken(params.buyTokenAddress),
-        srcAmount: params.sellAmountBaseUnits,
-        srcDecimals: params.sellTokenDecimals,
-        destDecimals: params.buyTokenDecimals,
-        userAddress: params.fromAddress,
-        slippage: params.slippagePercentage,
-        priceRoute: priceResponse.body.priceRoute,
-        partnerAddress: this.getPartnerAddress(params.feeConfig),
-        partnerFeeBps: this.getPartnerFeeBps(params.feeConfig),
-      });
+      const transactionResponse = await this.postJson(
+        buildParaSwapTransactionUrl(this.apiBaseUrl, params.chain),
+        buildParaSwapTransactionBody(params, priceResponse.body.priceRoute),
+      );
 
       this.observeRequest(transactionResponse.statusCode.toString(), startedAt);
 
@@ -205,7 +117,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   public async resolveApprovalTarget(
     params: IApprovalTargetRequest,
   ): Promise<IApprovalTargetResponse> {
-    const url = this.buildQuoteUrl({
+    const url = buildParaSwapQuoteUrl(this.apiBaseUrl, this.apiVersion, {
       chain: params.chain,
       sellTokenAddress: params.sellTokenAddress,
       buyTokenAddress: params.buyTokenAddress,
@@ -236,18 +148,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('ParaSwap response schema is invalid');
       }
 
-      const spenderAddress =
-        response.body.priceRoute.tokenTransferProxy ??
-        response.body.priceRoute.contractAddress ??
-        null;
-
-      if (!spenderAddress || spenderAddress.trim() === '') {
-        throw new BusinessException('ParaSwap tokenTransferProxy is missing');
-      }
-
-      return {
-        spenderAddress,
-      };
+      return extractParaSwapApprovalTarget(response.body);
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);
       throw error;
@@ -255,7 +156,7 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async healthCheck(): Promise<boolean> {
-    const url = this.buildHealthcheckUrl();
+    const url = buildParaSwapHealthcheckUrl(this.apiBaseUrl, this.apiVersion);
 
     try {
       const response = await this.getJson(url, {});
@@ -263,94 +164,6 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
     } catch {
       return false;
     }
-  }
-
-  private buildQuoteUrl(params: IQuoteRequest): URL {
-    const network = this.resolveNetwork(params.chain);
-    const url = new URL('/prices', this.apiBaseUrl);
-
-    url.searchParams.set('srcToken', this.normalizeToken(params.sellTokenAddress));
-    url.searchParams.set('destToken', this.normalizeToken(params.buyTokenAddress));
-    url.searchParams.set('amount', params.sellAmountBaseUnits);
-    url.searchParams.set('srcDecimals', `${params.sellTokenDecimals}`);
-    url.searchParams.set('destDecimals', `${params.buyTokenDecimals}`);
-    url.searchParams.set('side', SELL_SIDE);
-    url.searchParams.set('network', network);
-    url.searchParams.set('version', this.apiVersion);
-    this.applyQuoteFeeParams(url, params.feeConfig);
-
-    return url;
-  }
-
-  private buildHealthcheckUrl(): URL {
-    const url = new URL('/prices', this.apiBaseUrl);
-
-    url.searchParams.set('srcToken', PARASWAP_NATIVE_TOKEN);
-    url.searchParams.set('destToken', USDC_TOKEN);
-    url.searchParams.set('amount', HEALTHCHECK_SELL_AMOUNT);
-    url.searchParams.set('srcDecimals', WETH_DECIMALS);
-    url.searchParams.set('destDecimals', USDC_DECIMALS);
-    url.searchParams.set('side', SELL_SIDE);
-    url.searchParams.set('network', NETWORK_BY_CHAIN.ethereum);
-    url.searchParams.set('version', this.apiVersion);
-
-    return url;
-  }
-
-  private applyQuoteFeeParams(url: URL, feeConfig: IQuoteRequest['feeConfig']): void {
-    if (feeConfig.kind !== 'paraswap' || feeConfig.mode !== 'enforced') {
-      return;
-    }
-
-    url.searchParams.set('partnerAddress', feeConfig.partnerAddress);
-    url.searchParams.set('partnerFeeBps', `${feeConfig.feeBps}`);
-    url.searchParams.set(
-      'excludeContractMethodsWithoutFeeModel',
-      EXCLUDE_METHODS_WITHOUT_FEE_MODEL,
-    );
-  }
-
-  private normalizeToken(tokenAddress: string): string {
-    const normalized = tokenAddress.trim().toLowerCase();
-
-    if (normalized === PARASWAP_NATIVE_TOKEN) {
-      return PARASWAP_NATIVE_TOKEN;
-    }
-
-    return normalized;
-  }
-
-  private resolveNetwork(chain: ChainType): string {
-    if (chain === 'solana') {
-      throw new BusinessException('ParaSwap does not support Solana');
-    }
-
-    return NETWORK_BY_CHAIN[chain];
-  }
-
-  private parseGasUsd(value: string | undefined): number | null {
-    if (value === undefined) {
-      return null;
-    }
-
-    const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-
-  private getPartnerAddress(feeConfig: ISwapRequest['feeConfig']): string | undefined {
-    if (feeConfig.kind !== 'paraswap' || feeConfig.mode !== 'enforced') {
-      return undefined;
-    }
-
-    return feeConfig.partnerAddress;
-  }
-
-  private getPartnerFeeBps(feeConfig: ISwapRequest['feeConfig']): number | undefined {
-    if (feeConfig.kind !== 'paraswap' || feeConfig.mode !== 'enforced') {
-      return undefined;
-    }
-
-    return feeConfig.feeBps;
   }
 
   private async postJson(
@@ -380,7 +193,9 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
             ? JSON.stringify(parsedBody).slice(0, ERROR_BODY_MAX_LENGTH)
             : '';
         throw new BusinessException(
-          `Aggregator request failed with status ${response.status}${errorDetail ? `: ${errorDetail}` : ''}`,
+          `Aggregator request failed with status ${response.status}${
+            errorDetail ? `: ${errorDetail}` : ''
+          }`,
         );
       }
 
@@ -401,20 +216,6 @@ export class ParaSwapAggregator extends BaseAggregator implements IAggregator {
       throw new BusinessException(`Aggregator request failed: ${message}`);
     } finally {
       clearTimeout(timeout);
-    }
-  }
-
-  private ensurePositiveAmount(value: string): void {
-    let parsedValue: bigint;
-
-    try {
-      parsedValue = BigInt(value);
-    } catch {
-      throw new BusinessException('ParaSwap response contains invalid destAmount');
-    }
-
-    if (parsedValue <= ZERO_BIGINT) {
-      throw new BusinessException('Недостаточно ликвидности для указанной пары');
     }
   }
 
