@@ -1,11 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { buildZeroXQuoteUrl, buildZeroXSwapUrl } from './zero-x.quote-builder';
+import {
+  extractZeroXApprovalTarget,
+  isZeroXQuoteResponse,
+  isZeroXSwapTransaction,
+  toZeroXQuoteResponse,
+} from './zero-x.response-mapper';
+import { buildZeroXSwapTransaction } from './zero-x.transaction-builder';
+import {
+  DEFAULT_TAKER_ADDRESS,
+  DEFAULT_ZERO_X_API_BASE_URL,
+  ZERO_X_SUPPORTED_CHAINS,
+  ZERO_X_VERSION,
+} from './zero-x.types';
 import type {
   IApprovalTargetRequest,
   IApprovalTargetResponse,
 } from '../../allowance/interfaces/allowance.interface';
-import type { ChainType } from '../../chains/interfaces/chain.interface';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
 import { BaseAggregator } from '../base/base.aggregator';
@@ -16,64 +29,6 @@ import type {
   ISwapRequest,
   ISwapTransaction,
 } from '../interfaces/aggregator.interface';
-
-const ZERO_X_VERSION = 'v2';
-const DEFAULT_ZERO_X_API_BASE_URL = 'https://api.0x.org';
-const DEFAULT_TAKER_ADDRESS = '0x0000000000000000000000000000000000010000';
-const BPS_PERCENT_MULTIPLIER = 100;
-type IEvmChainType = Exclude<ChainType, 'solana'>;
-const ZERO_X_SUPPORTED_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
-const CHAIN_ID_BY_CHAIN: Readonly<Record<IEvmChainType, string>> = {
-  ethereum: '1',
-  arbitrum: '42161',
-  base: '8453',
-  optimism: '10',
-};
-
-interface IZeroXQuoteResponse {
-  buyAmount: string;
-  liquidityAvailable: boolean;
-  totalNetworkFee: string | null;
-  allowanceTarget?: string;
-  fees?: {
-    integratorFee?: {
-      amount: string;
-    } | null;
-  };
-  transaction?: IZeroXSwapTransaction;
-}
-
-interface IZeroXSwapTransaction {
-  to: string;
-  data: string;
-  value: string;
-}
-
-function isZeroXQuoteResponse(value: unknown): value is IZeroXQuoteResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record['buyAmount'] === 'string' &&
-    typeof record['liquidityAvailable'] === 'boolean' &&
-    (typeof record['totalNetworkFee'] === 'string' || record['totalNetworkFee'] === null)
-  );
-}
-
-function isZeroXSwapTransaction(value: unknown): value is IZeroXSwapTransaction {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record['to'] === 'string' &&
-    typeof record['data'] === 'string' &&
-    typeof record['value'] === 'string'
-  );
-}
 
 @Injectable()
 export class ZeroXAggregator extends BaseAggregator implements IAggregator {
@@ -101,7 +56,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async getQuote(params: IQuoteRequest): Promise<IQuoteResponse> {
-    const url = this.buildQuoteUrl(params);
+    const url = buildZeroXQuoteUrl(this.apiBaseUrl, this.takerAddress, params);
     const headers = this.buildHeaders();
     const startedAt = Date.now();
 
@@ -113,36 +68,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('0x response schema is invalid');
       }
 
-      if (!response.body.liquidityAvailable) {
-        throw new BusinessException('Недостаточно ликвидности для указанной пары');
-      }
-
-      const feeAmountBaseUnits = response.body.fees?.integratorFee?.amount ?? '0';
-      const grossToAmountBaseUnits = this.resolveGrossToAmountBaseUnits(
-        response.body.buyAmount,
-        feeAmountBaseUnits,
-        params.feeConfig,
-      );
-
-      return {
-        aggregatorName: this.name,
-        toAmountBaseUnits: response.body.buyAmount,
-        grossToAmountBaseUnits,
-        feeAmountBaseUnits,
-        feeAmountSymbol: null,
-        feeAmountDecimals: null,
-        feeBps: 0,
-        feeMode: 'disabled',
-        feeType: 'no fee',
-        feeDisplayLabel: 'no fee',
-        feeAppliedAtQuote: false,
-        feeEnforcedOnExecution: false,
-        feeAssetSide: 'none',
-        executionFee: params.feeConfig,
-        estimatedGasUsd: null,
-        totalNetworkFeeWei: response.body.totalNetworkFee,
-        rawQuote: response.body,
-      };
+      return toZeroXQuoteResponse(this.name, params, response.body);
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);
       throw error;
@@ -150,7 +76,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction> {
-    const url = this.buildSwapUrl(params);
+    const url = buildZeroXSwapUrl(this.apiBaseUrl, params);
     const headers = this.buildHeaders();
     const startedAt = Date.now();
 
@@ -166,12 +92,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('0x swap transaction is missing in response');
       }
 
-      return {
-        kind: 'evm',
-        to: response.body.transaction.to,
-        data: response.body.transaction.data,
-        value: response.body.transaction.value,
-      };
+      return buildZeroXSwapTransaction(response.body.transaction);
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);
       throw error;
@@ -181,7 +102,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
   public async resolveApprovalTarget(
     params: IApprovalTargetRequest,
   ): Promise<IApprovalTargetResponse> {
-    const url = this.buildQuoteUrl({
+    const url = buildZeroXQuoteUrl(this.apiBaseUrl, this.takerAddress, {
       chain: params.chain,
       sellTokenAddress: params.sellTokenAddress,
       buyTokenAddress: params.buyTokenAddress,
@@ -213,15 +134,7 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('0x response schema is invalid');
       }
 
-      const spenderAddress = response.body.allowanceTarget ?? response.body.transaction?.to ?? null;
-
-      if (!spenderAddress || spenderAddress.trim() === '') {
-        throw new BusinessException('0x allowanceTarget is missing');
-      }
-
-      return {
-        spenderAddress,
-      };
+      return extractZeroXApprovalTarget(response.body);
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);
       throw error;
@@ -239,19 +152,6 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
     }
   }
 
-  private buildQuoteUrl(params: IQuoteRequest): URL {
-    const url = new URL('/swap/allowance-holder/quote', this.apiBaseUrl);
-
-    url.searchParams.set('chainId', this.resolveChainId(params.chain));
-    url.searchParams.set('sellToken', params.sellTokenAddress);
-    url.searchParams.set('buyToken', params.buyTokenAddress);
-    url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
-    url.searchParams.set('taker', this.takerAddress);
-    this.applyFeeParams(url, params.feeConfig);
-
-    return url;
-  }
-
   private buildHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       '0x-version': ZERO_X_VERSION,
@@ -262,60 +162,6 @@ export class ZeroXAggregator extends BaseAggregator implements IAggregator {
     }
 
     return headers;
-  }
-
-  private buildSwapUrl(params: ISwapRequest): URL {
-    const url = new URL('/swap/allowance-holder/quote', this.apiBaseUrl);
-
-    url.searchParams.set('chainId', this.resolveChainId(params.chain));
-    url.searchParams.set('sellToken', params.sellTokenAddress);
-    url.searchParams.set('buyToken', params.buyTokenAddress);
-    url.searchParams.set('sellAmount', params.sellAmountBaseUnits);
-    url.searchParams.set('taker', params.fromAddress);
-    url.searchParams.set('slippageBps', this.toSlippageBps(params.slippagePercentage));
-    this.applyFeeParams(url, params.feeConfig);
-
-    return url;
-  }
-
-  private applyFeeParams(url: URL, feeConfig: IQuoteRequest['feeConfig']): void {
-    if (feeConfig.kind !== 'zerox' || feeConfig.mode !== 'enforced') {
-      return;
-    }
-
-    url.searchParams.set('swapFeeRecipient', feeConfig.feeRecipient);
-    url.searchParams.set('swapFeeBps', `${feeConfig.feeBps}`);
-    url.searchParams.set('swapFeeToken', feeConfig.feeTokenAddress);
-  }
-
-  private resolveGrossToAmountBaseUnits(
-    netToAmountBaseUnits: string,
-    feeAmountBaseUnits: string,
-    feeConfig: IQuoteRequest['feeConfig'],
-  ): string {
-    if (
-      feeConfig.kind !== 'zerox' ||
-      feeConfig.mode !== 'enforced' ||
-      feeConfig.feeAssetSide !== 'buy' ||
-      feeAmountBaseUnits === '0'
-    ) {
-      return netToAmountBaseUnits;
-    }
-
-    return (BigInt(netToAmountBaseUnits) + BigInt(feeAmountBaseUnits)).toString();
-  }
-
-  private toSlippageBps(slippagePercentage: number): string {
-    const slippageBps = Math.round(slippagePercentage * BPS_PERCENT_MULTIPLIER);
-    return `${Math.max(slippageBps, 1)}`;
-  }
-
-  private resolveChainId(chain: ChainType): string {
-    if (chain === 'solana') {
-      throw new BusinessException('0x does not support Solana');
-    }
-
-    return CHAIN_ID_BY_CHAIN[chain];
   }
 
   private observeRequest(statusCode: string, startedAt: number): void {
