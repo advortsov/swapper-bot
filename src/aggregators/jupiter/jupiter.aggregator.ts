@@ -1,6 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { resolveJupiterFeeAccount } from './jupiter.fee-account-resolver';
+import { buildJupiterQuoteUrl, toJupiterSlippageBps } from './jupiter.quote-builder';
+import {
+  isJupiterQuoteResponse,
+  isJupiterSwapResponse,
+  toJupiterQuoteResponse,
+} from './jupiter.response-mapper';
+import {
+  buildJupiterSwapRequest,
+  buildJupiterSwapTransaction,
+  buildJupiterSwapUrl,
+} from './jupiter.swap-builder';
+import {
+  DEFAULT_JUPITER_API_BASE_URL,
+  HEALTHCHECK_AMOUNT,
+  HEALTHCHECK_INPUT_MINT,
+  HEALTHCHECK_OUTPUT_MINT,
+  JUPITER_SUPPORTED_CHAINS,
+} from './jupiter.types';
 import { BusinessException } from '../../common/exceptions/business.exception';
 import { MetricsService } from '../../metrics/metrics.service';
 import { BaseAggregator } from '../base/base.aggregator';
@@ -11,50 +30,6 @@ import type {
   ISwapRequest,
   ISwapTransaction,
 } from '../interfaces/aggregator.interface';
-
-const DEFAULT_JUPITER_API_BASE_URL = 'https://lite-api.jup.ag';
-const JUPITER_QUOTE_PATH = '/swap/v1/quote';
-const JUPITER_SWAP_PATH = '/swap/v1/swap';
-const JUPITER_SUPPORTED_CHAINS = ['solana'] as const;
-const DEFAULT_SLIPPAGE_BPS = '50';
-const RESTRICT_INTERMEDIATE_TOKENS = 'true';
-const HEALTHCHECK_INPUT_MINT = 'So11111111111111111111111111111111111111112';
-const HEALTHCHECK_OUTPUT_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const HEALTHCHECK_AMOUNT = '100000000';
-const BPS_PERCENT_MULTIPLIER = 100;
-
-interface IJupiterQuoteResponse {
-  outAmount: string;
-  platformFee?: {
-    amount: string;
-  };
-}
-
-interface IJupiterSwapResponse {
-  swapTransaction: string;
-  lastValidBlockHeight: number;
-}
-
-function isJupiterQuoteResponse(value: unknown): value is IJupiterQuoteResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate['outAmount'] === 'string';
-}
-
-function isJupiterSwapResponse(value: unknown): value is IJupiterSwapResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate['swapTransaction'] === 'string' &&
-    typeof candidate['lastValidBlockHeight'] === 'number'
-  );
-}
 
 @Injectable()
 export class JupiterAggregator extends BaseAggregator implements IAggregator {
@@ -77,7 +52,8 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async getQuote(params: IQuoteRequest): Promise<IQuoteResponse> {
-    const url = this.buildQuoteUrl({
+    const url = buildJupiterQuoteUrl({
+      apiBaseUrl: this.apiBaseUrl,
       inputMint: params.sellTokenAddress,
       outputMint: params.buyTokenAddress,
       amount: params.sellAmountBaseUnits,
@@ -97,32 +73,7 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('Jupiter quote amount is missing');
       }
 
-      const feeAmountBaseUnits = response.body.platformFee?.amount ?? '0';
-      const grossToAmountBaseUnits = this.resolveGrossToAmountBaseUnits(
-        response.body.outAmount,
-        feeAmountBaseUnits,
-        params.feeConfig,
-      );
-
-      return {
-        aggregatorName: this.name,
-        toAmountBaseUnits: response.body.outAmount,
-        grossToAmountBaseUnits,
-        feeAmountBaseUnits,
-        feeAmountSymbol: null,
-        feeAmountDecimals: null,
-        feeBps: 0,
-        feeMode: 'disabled',
-        feeType: 'no fee',
-        feeDisplayLabel: 'no fee',
-        feeAppliedAtQuote: false,
-        feeEnforcedOnExecution: false,
-        feeAssetSide: 'none',
-        executionFee: params.feeConfig,
-        estimatedGasUsd: null,
-        totalNetworkFeeWei: null,
-        rawQuote: response.body,
-      };
+      return toJupiterQuoteResponse(this.name, params, response.body);
     } catch (error: unknown) {
       this.observeRequest('500', startedAt);
       throw error;
@@ -130,12 +81,13 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async buildSwapTransaction(params: ISwapRequest): Promise<ISwapTransaction> {
-    const quoteUrl = this.buildQuoteUrl({
+    const quoteUrl = buildJupiterQuoteUrl({
+      apiBaseUrl: this.apiBaseUrl,
       inputMint: params.sellTokenAddress,
       outputMint: params.buyTokenAddress,
       amount: params.sellAmountBaseUnits,
       feeConfig: params.feeConfig,
-      slippageBps: this.toSlippageBps(params.slippagePercentage),
+      slippageBps: toJupiterSlippageBps(params.slippagePercentage),
     });
     const startedAt = Date.now();
 
@@ -146,27 +98,23 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
         throw new BusinessException('Jupiter response schema is invalid');
       }
 
-      const swapResponse = await this.postJson(new URL(JUPITER_SWAP_PATH, this.apiBaseUrl), {
-        quoteResponse: quoteResponse.body,
-        userPublicKey: params.fromAddress,
-        dynamicComputeUnitLimit: true,
-        dynamicSlippage: true,
-        feeAccount: this.getFeeAccount(params.feeConfig),
-      });
+      const feeAccount = resolveJupiterFeeAccount(params.feeConfig);
+      const swapResponse = await this.postJson(
+        buildJupiterSwapUrl(this.apiBaseUrl),
+        buildJupiterSwapRequest({
+          quoteResponse: quoteResponse.body,
+          userPublicKey: params.fromAddress,
+          feeConfig: params.feeConfig,
+          ...(feeAccount === undefined ? {} : { feeAccount }),
+        }),
+      );
       this.observeRequest(swapResponse.statusCode.toString(), startedAt, 'POST');
 
       if (!isJupiterSwapResponse(swapResponse.body)) {
         throw new BusinessException('Jupiter swap response schema is invalid');
       }
 
-      return {
-        kind: 'solana',
-        to: '',
-        data: '',
-        value: '0',
-        serializedTransaction: swapResponse.body.swapTransaction,
-        lastValidBlockHeight: swapResponse.body.lastValidBlockHeight,
-      };
+      return buildJupiterSwapTransaction(swapResponse.body);
     } catch (error: unknown) {
       this.observeRequest('500', startedAt, 'POST');
       throw error;
@@ -174,7 +122,8 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
   }
 
   public async healthCheck(): Promise<boolean> {
-    const url = this.buildQuoteUrl({
+    const url = buildJupiterQuoteUrl({
+      apiBaseUrl: this.apiBaseUrl,
       inputMint: HEALTHCHECK_INPUT_MINT,
       outputMint: HEALTHCHECK_OUTPUT_MINT,
       amount: HEALTHCHECK_AMOUNT,
@@ -199,23 +148,6 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
     } catch {
       return false;
     }
-  }
-
-  private buildQuoteUrl(input: {
-    inputMint: string;
-    outputMint: string;
-    amount: string;
-    feeConfig: IQuoteRequest['feeConfig'];
-    slippageBps?: string;
-  }): URL {
-    const url = new URL(JUPITER_QUOTE_PATH, this.apiBaseUrl);
-    url.searchParams.set('inputMint', input.inputMint);
-    url.searchParams.set('outputMint', input.outputMint);
-    url.searchParams.set('amount', input.amount);
-    url.searchParams.set('slippageBps', input.slippageBps ?? DEFAULT_SLIPPAGE_BPS);
-    url.searchParams.set('restrictIntermediateTokens', RESTRICT_INTERMEDIATE_TOKENS);
-    this.applyFeeParams(url, input.feeConfig);
-    return url;
   }
 
   private buildHeaders(): Record<string, string> {
@@ -247,43 +179,6 @@ export class JupiterAggregator extends BaseAggregator implements IAggregator {
       statusCode: response.status,
       body: parsedBody,
     };
-  }
-
-  private toSlippageBps(slippagePercentage: number): string {
-    return `${Math.max(Math.round(slippagePercentage * BPS_PERCENT_MULTIPLIER), 1)}`;
-  }
-
-  private applyFeeParams(url: URL, feeConfig: IQuoteRequest['feeConfig']): void {
-    if (feeConfig.kind !== 'jupiter' || feeConfig.mode !== 'enforced') {
-      return;
-    }
-
-    url.searchParams.set('platformFeeBps', `${feeConfig.feeBps}`);
-  }
-
-  private getFeeAccount(feeConfig: ISwapRequest['feeConfig']): string | undefined {
-    if (feeConfig.kind !== 'jupiter' || feeConfig.mode !== 'enforced') {
-      return undefined;
-    }
-
-    return feeConfig.feeAccount;
-  }
-
-  private resolveGrossToAmountBaseUnits(
-    netToAmountBaseUnits: string,
-    feeAmountBaseUnits: string,
-    feeConfig: IQuoteRequest['feeConfig'],
-  ): string {
-    if (
-      feeConfig.kind !== 'jupiter' ||
-      feeConfig.mode !== 'enforced' ||
-      feeConfig.feeAssetSide !== 'buy' ||
-      feeAmountBaseUnits === '0'
-    ) {
-      return netToAmountBaseUnits;
-    }
-
-    return (BigInt(netToAmountBaseUnits) + BigInt(feeAmountBaseUnits)).toString();
   }
 
   private observeRequest(

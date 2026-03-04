@@ -1,0 +1,10 @@
+export const DEFAULT_JUPITER_API_BASE_URL = 'https://lite-api.jup.ag';
+export const JUPITER_QUOTE_PATH = '/swap/v1/quote';
+export const JUPITER_SWAP_PATH = '/swap/v1/swap';
+export const JUPITER_SUPPORTED_CHAINS = ['solana'] as const;
+export const DEFAULT_SLIPPAGE_BPS = '50';
+export const RESTRICT_INTERMEDIATE_TOKENS = 'true';
+export const HEALTHCHECK_INPUT_MINT = 'So11111111111111111111111111111111111111112';
+export const HEALTHCHECK_OUTPUT_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+export const HEALTHCHECK_AMOUNT = '100000000';
+export const BPS_PERCENT_MULTIPLIER = 100;
