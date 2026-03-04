@@ -5,106 +5,110 @@ import type { ISwapSessionResponse } from '../../src/swap/interfaces/swap.interf
 import { TelegramConnectionsService } from '../../src/telegram/telegram.connections.service';
 
 describe('TelegramConnectionsService', () => {
-  it('должен возвращать кнопки открытия кошельков для evm swap session', async () => {
-    const service = new TelegramConnectionsService({
+  function createService(): {
+    service: TelegramConnectionsService;
+    parser: {
+      parseConnectChain: ReturnType<typeof vi.fn>;
+      parseDisconnectChain: ReturnType<typeof vi.fn>;
+      resolveConnectActionChain: ReturnType<typeof vi.fn>;
+      resolveDisconnectActionChain: ReturnType<typeof vi.fn>;
+      buildConnectionButtons: ReturnType<typeof vi.fn>;
+      isConnectAction: ReturnType<typeof vi.fn>;
+      isDisconnectAction: ReturnType<typeof vi.fn>;
+    };
+    reply: {
+      replyConnectionStatus: ReturnType<typeof vi.fn>;
+      replyAlreadyConnected: ReturnType<typeof vi.fn>;
+      replyConnectionSession: ReturnType<typeof vi.fn>;
+      replyDisconnectMessage: ReturnType<typeof vi.fn>;
+      replySwapSession: ReturnType<typeof vi.fn>;
+      replyApproveSession: ReturnType<typeof vi.fn>;
+    };
+    walletConnectService: {
+      getConnectionStatus: ReturnType<typeof vi.fn>;
+      connect: ReturnType<typeof vi.fn>;
+      disconnect: ReturnType<typeof vi.fn>;
+    };
+  } {
+    const walletConnectService = {
       getConnectionStatus: vi.fn(),
       connect: vi.fn(),
       disconnect: vi.fn(),
-    } as never);
-    const reply = vi.fn().mockResolvedValue(undefined);
-    const replyWithPhoto = vi.fn().mockResolvedValue(undefined);
-    const context = {
+    };
+    const parser = {
+      parseConnectChain: vi.fn(),
+      parseDisconnectChain: vi.fn(),
+      resolveConnectActionChain: vi.fn(),
+      resolveDisconnectActionChain: vi.fn(),
+      buildConnectionButtons: vi.fn(),
+      isConnectAction: vi.fn(),
+      isDisconnectAction: vi.fn(),
+    };
+    const reply = {
+      replyConnectionStatus: vi.fn().mockResolvedValue(undefined),
+      replyAlreadyConnected: vi.fn().mockResolvedValue(undefined),
+      replyConnectionSession: vi.fn().mockResolvedValue(undefined),
+      replyDisconnectMessage: vi.fn().mockResolvedValue(undefined),
+      replySwapSession: vi.fn().mockResolvedValue(undefined),
+      replyApproveSession: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new TelegramConnectionsService(walletConnectService as never);
+
+    Object.assign(service, {
+      telegramConnectionsParserService: parser,
+      telegramConnectionsReplyService: reply,
+    });
+
+    return {
+      service,
+      parser,
       reply,
-      replyWithPhoto,
+      walletConnectService,
     };
-    const session: ISwapSessionResponse = {
-      intentId: 'intent-1',
-      chain: 'ethereum',
-      aggregator: 'paraswap',
-      fromSymbol: 'ETH',
-      toSymbol: 'USDC',
-      fromAmount: '0.1',
-      toAmount: '198.42',
-      grossToAmount: '198.72',
-      feeAmount: '0.30',
-      feeAmountSymbol: 'USDC',
-      feeBps: 20,
-      feeMode: 'enforced',
-      feeType: 'partner fee',
-      feeDisplayLabel: 'partner fee',
-      walletConnectUri: 'wc:test-session@2?relay-protocol=irn&symKey=test',
-      sessionId: 'session-id',
-      expiresAt: '2026-03-03T12:10:00.000Z',
-      quoteExpiresAt: '2026-03-03T12:05:00.000Z',
-      walletDelivery: 'qr',
-    };
+  }
+
+  it('должен делегировать replySwapSession в reply service', async () => {
+    const { service, reply } = createService();
+    const context = {};
+    const session = { chain: 'ethereum' } as ISwapSessionResponse;
 
     await service.replySwapSession(context as never, session);
 
-    const replyOptions = reply.mock.calls[0]?.[1] as
-      | {
-          reply_markup?: {
-            inline_keyboard?: { text: string; url?: string }[][];
-          };
-        }
-      | undefined;
-
-    expect(reply).toHaveBeenCalledTimes(1);
-    expect(replyOptions?.reply_markup?.inline_keyboard?.[0]?.map((button) => button.text)).toEqual([
-      'Open in MetaMask',
-      'Open in Trust Wallet',
-    ]);
-    expect(replyOptions?.reply_markup?.inline_keyboard?.[1]?.[0]?.text).toBe(
-      'MetaMask (legacy link)',
-    );
-    expect(replyWithPhoto).toHaveBeenCalledTimes(1);
+    expect(reply.replySwapSession).toHaveBeenCalledWith(context, session);
   });
 
-  it('должен возвращать кнопки открытия кошельков для approve session', async () => {
-    const service = new TelegramConnectionsService({
-      getConnectionStatus: vi.fn(),
-      connect: vi.fn(),
-      disconnect: vi.fn(),
-    } as never);
-    const reply = vi.fn().mockResolvedValue(undefined);
-    const replyWithPhoto = vi.fn().mockResolvedValue(undefined);
-    const context = {
-      reply,
-      replyWithPhoto,
-    };
-    const session: IApproveSessionResponse = {
-      chain: 'arbitrum',
-      tokenSymbol: 'USDC',
-      tokenAddress: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
-      aggregatorName: 'paraswap',
-      spenderAddress: '0x1111111111111111111111111111111111111111',
-      mode: 'exact',
-      amount: '100',
-      currentAllowance: '12.5',
-      walletConnectUri: 'wc:test-session@2?relay-protocol=irn&symKey=test',
-      sessionId: 'session-id',
-      expiresAt: '2026-03-03T12:10:00.000Z',
-      walletDelivery: 'qr',
-    };
+  it('должен делегировать replyApproveSession в reply service', async () => {
+    const { service, reply } = createService();
+    const context = {};
+    const session = { chain: 'arbitrum' } as IApproveSessionResponse;
 
     await service.replyApproveSession(context as never, session);
 
-    const replyOptions = reply.mock.calls[0]?.[1] as
-      | {
-          reply_markup?: {
-            inline_keyboard?: { text: string; url?: string }[][];
-          };
-        }
-      | undefined;
+    expect(reply.replyApproveSession).toHaveBeenCalledWith(context, session);
+  });
 
-    expect(reply).toHaveBeenCalledTimes(1);
-    expect(replyOptions?.reply_markup?.inline_keyboard?.[0]?.map((button) => button.text)).toEqual([
-      'Open in MetaMask',
-      'Open in Trust Wallet',
+  it('должен показывать статус подключений для /connect без chain', async () => {
+    const { service, parser, reply, walletConnectService } = createService();
+    const context = {};
+    parser.parseConnectChain.mockReturnValue(null);
+    walletConnectService.getConnectionStatus.mockReturnValue({ evm: null, solana: null });
+    parser.buildConnectionButtons.mockReturnValue([
+      [{ text: 'Подключить EVM', callback_data: 'x' }],
     ]);
-    expect(replyOptions?.reply_markup?.inline_keyboard?.[1]?.[0]?.text).toBe(
-      'MetaMask (legacy link)',
-    );
-    expect(replyWithPhoto).toHaveBeenCalledTimes(1);
+
+    await service.handleConnect(context as never, '42', '/connect');
+
+    expect(reply.replyConnectionStatus).toHaveBeenCalled();
+  });
+
+  it('должен отключать по /disconnect через parser и reply service', async () => {
+    const { service, parser, reply, walletConnectService } = createService();
+    const context = {};
+    parser.parseDisconnectChain.mockReturnValue('ethereum');
+
+    await service.handleDisconnect(context as never, '42', '/disconnect on ethereum');
+
+    expect(walletConnectService.disconnect).toHaveBeenCalledWith('42', 'ethereum');
+    expect(reply.replyDisconnectMessage).toHaveBeenCalledWith(context, 'ethereum');
   });
 });

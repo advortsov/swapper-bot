@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { TelegramBot } from './telegram.bot';
+import { TelegramConnectionsLinksService } from './telegram.connections-links.service';
+import { TelegramConnectionsParserService } from './telegram.connections-parser.service';
+import { TelegramConnectionsReplyService } from './telegram.connections-reply.service';
 import { TelegramConnectionsService } from './telegram.connections.service';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
+import { TelegramQrService } from './telegram.qr.service';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
 import { TelegramTradingService } from './telegram.trading.service';
 import { TelegramUpdateHandler } from './telegram.update-handler';
@@ -28,7 +32,11 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
   ],
   providers: [
     TelegramSettingsHandler,
+    TelegramConnectionsLinksService,
+    TelegramConnectionsParserService,
+    TelegramConnectionsReplyService,
     TelegramConnectionsService,
+    TelegramQrService,
     TelegramPortfolioService,
     TelegramTradingService,
     TelegramUpdateHandler,
