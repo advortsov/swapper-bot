@@ -1,7 +1,13 @@
 import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it } from 'vitest';
 
+import { FeePolicyConfigService } from '../../src/fees/fee-policy.config.service';
+import { FeePolicyDisabledService } from '../../src/fees/fee-policy.disabled.service';
+import { FeePolicyJupiterService } from '../../src/fees/fee-policy.jupiter.service';
+import { FeePolicyOdosService } from '../../src/fees/fee-policy.odos.service';
+import { FeePolicyParaSwapService } from '../../src/fees/fee-policy.paraswap.service';
 import { FeePolicyService } from '../../src/fees/fee-policy.service';
+import { FeePolicyZeroXService } from '../../src/fees/fee-policy.zerox.service';
 import type { ITokenRecord } from '../../src/tokens/tokens.repository';
 
 const ETH_TOKEN: ITokenRecord = {
@@ -40,8 +46,15 @@ function createService(values: Record<string, string>): FeePolicyService {
   const configService: Pick<ConfigService, 'get'> = {
     get: (key: string) => values[key],
   };
+  const feePolicyConfigService = new FeePolicyConfigService(configService as ConfigService);
+  const disabledService = new FeePolicyDisabledService();
 
-  return new FeePolicyService(configService as ConfigService);
+  return new FeePolicyService(
+    new FeePolicyJupiterService(feePolicyConfigService, disabledService),
+    new FeePolicyOdosService(feePolicyConfigService, disabledService),
+    new FeePolicyParaSwapService(feePolicyConfigService, disabledService),
+    new FeePolicyZeroXService(feePolicyConfigService, disabledService),
+  );
 }
 
 describe('FeePolicyService', () => {

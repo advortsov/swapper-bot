@@ -1,0 +1,13 @@
+export const ZERO_BPS = 0;
+export const MAX_FEE_BPS = 10_000;
+export const MAX_PARASWAP_FEE_BPS = 200;
+export const DEFAULT_ODOS_MODE = 'disabled';
+export const DEFAULT_ZEROX_TOKEN_POLICY = 'auto';
+export const FEE_TYPE_NATIVE = 'native fee';
+export const FEE_TYPE_PARTNER = 'partner fee';
+export const FEE_TYPE_NONE = 'no fee';
+export const DISPLAY_LABEL_NATIVE = 'native fee';
+export const DISPLAY_LABEL_PARTNER = 'partner fee';
+export const DISPLAY_LABEL_NONE = 'no fee';
+export const SUPPORTED_JUPITER_FEE_SYMBOLS = ['SOL', 'USDC', 'USDT', 'JUP', 'BONK'] as const;
+export const ODOS_MONETIZABLE_CHAINS = ['ethereum', 'arbitrum', 'base', 'optimism'] as const;
