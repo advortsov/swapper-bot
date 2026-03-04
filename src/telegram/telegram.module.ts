@@ -8,6 +8,10 @@ import { TelegramConnectionsService } from './telegram.connections.service';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramQrService } from './telegram.qr.service';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
+import { TelegramTradingApproveService } from './telegram.trading-approve.service';
+import { TelegramTradingButtonsService } from './telegram.trading-buttons.service';
+import { TelegramTradingParserService } from './telegram.trading-parser.service';
+import { TelegramTradingQuoteService } from './telegram.trading-quote.service';
 import { TelegramTradingService } from './telegram.trading.service';
 import { TelegramUpdateHandler } from './telegram.update-handler';
 import { AlertsModule } from '../alerts/alerts.module';
@@ -38,6 +42,10 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
     TelegramConnectionsService,
     TelegramQrService,
     TelegramPortfolioService,
+    TelegramTradingApproveService,
+    TelegramTradingButtonsService,
+    TelegramTradingParserService,
+    TelegramTradingQuoteService,
     TelegramTradingService,
     TelegramUpdateHandler,
     TelegramBot,
