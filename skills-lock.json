@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "3aeb03df66d302060e25155a7dde3f5927a83c8055d90456447233fba70e890b"
     },
+    "feature-dev": {
+      "source": "notedit/happy-skills",
+      "sourceType": "github",
+      "computedHash": "88689be79a44bac2873145d149cc7bd120f6f3eb896bbab99609cd05a58ecbcb"
+    },
     "github": {
       "source": "callstackincubator/agent-skills",
       "sourceType": "github",

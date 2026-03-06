@@ -282,7 +282,17 @@ export class MetricsService {
       help: 'Time from submission to confirmation',
       labelNames: ['chain'],
       registers: [this.registry],
-      buckets: [BUCKET_1, BUCKET_2, BUCKET_5, BUCKET_10, BUCKET_30, BUCKET_60, BUCKET_120, BUCKET_300, BUCKET_600],
+      buckets: [
+        BUCKET_1,
+        BUCKET_2,
+        BUCKET_5,
+        BUCKET_10,
+        BUCKET_30,
+        BUCKET_60,
+        BUCKET_120,
+        BUCKET_300,
+        BUCKET_600,
+      ],
     });
   }
 }
