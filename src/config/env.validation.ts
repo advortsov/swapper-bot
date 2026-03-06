@@ -5,6 +5,8 @@ import {
   DEFAULT_SWAP_SLIPPAGE,
   DEFAULT_SWAP_TIMEOUT_SECONDS,
   DEFAULT_TELEGRAM_PENDING_ACTION_TTL_SECONDS,
+  DEFAULT_TX_TRACKING_POLL_INTERVAL,
+  DEFAULT_TX_TRACKING_TIMEOUT,
   DEFAULT_WALLET_CONNECT_SESSION_TTL_SECONDS,
   ENV_KEY_APP_PUBLIC_URL,
   ENV_KEY_CACHE_TTL_PRICE,
@@ -20,11 +22,16 @@ import {
   ENV_KEY_TELEGRAM_BOT_TOKEN,
   ENV_KEY_TELEGRAM_ENABLED,
   ENV_KEY_TELEGRAM_PENDING_ACTION_TTL_SEC,
+  ENV_KEY_TX_TRACKING_ENABLED,
+  ENV_KEY_TX_TRACKING_POLL_INTERVAL_SEC,
+  ENV_KEY_TX_TRACKING_TIMEOUT_SEC,
   ENV_KEY_WALLET_CONNECT_SESSION_TTL_SEC,
   ENV_KEY_WC_PROJECT_ID,
   MIN_CACHE_TTL,
   MIN_SLIPPAGE,
   MIN_SWAP_TIMEOUT_SECONDS,
+  MIN_TX_TRACKING_POLL_INTERVAL,
+  MIN_TX_TRACKING_TIMEOUT,
   type EnvironmentResult,
   type EnvironmentSource,
 } from './env.validation.constants';
@@ -93,13 +100,11 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     DEFAULT_SWAP_SLIPPAGE,
     MIN_SLIPPAGE,
   );
+  const txTrackingEnvironment = validateTxTrackingEnvironment(source);
   const feeEnvironment = validateFeeEnvironment(source);
-
-  let telegramBotToken: string | undefined;
-
-  if (telegramEnabled) {
-    telegramBotToken = getRequiredString(source, ENV_KEY_TELEGRAM_BOT_TOKEN);
-  }
+  const telegramBotToken = telegramEnabled
+    ? getRequiredString(source, ENV_KEY_TELEGRAM_BOT_TOKEN)
+    : undefined;
 
   return {
     ...source,
@@ -120,5 +125,24 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     [ENV_KEY_SWAP_SLIPPAGE]: swapSlippage.toString(),
     ...feeEnvironment,
     [ENV_KEY_TELEGRAM_BOT_TOKEN]: telegramBotToken ?? source[ENV_KEY_TELEGRAM_BOT_TOKEN],
+    ...txTrackingEnvironment,
+  };
+}
+
+function validateTxTrackingEnvironment(source: EnvironmentSource): EnvironmentResult {
+  return {
+    [ENV_KEY_TX_TRACKING_ENABLED]: getBoolean(source, ENV_KEY_TX_TRACKING_ENABLED, true).toString(),
+    [ENV_KEY_TX_TRACKING_POLL_INTERVAL_SEC]: getPositiveInteger(
+      source,
+      ENV_KEY_TX_TRACKING_POLL_INTERVAL_SEC,
+      DEFAULT_TX_TRACKING_POLL_INTERVAL,
+      MIN_TX_TRACKING_POLL_INTERVAL,
+    ).toString(),
+    [ENV_KEY_TX_TRACKING_TIMEOUT_SEC]: getPositiveInteger(
+      source,
+      ENV_KEY_TX_TRACKING_TIMEOUT_SEC,
+      DEFAULT_TX_TRACKING_TIMEOUT,
+      MIN_TX_TRACKING_TIMEOUT,
+    ).toString(),
   };
 }

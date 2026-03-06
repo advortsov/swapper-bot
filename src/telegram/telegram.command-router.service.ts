@@ -3,14 +3,19 @@ import type { Context } from 'telegraf';
 
 import { TelegramConnectionsService } from './telegram.connections.service';
 import { TelegramErrorReplyService } from './telegram.error-reply.service';
+import { buildTransactionStatusMessage } from './telegram.message-formatters';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
 import { TelegramTradingService } from './telegram.trading.service';
+import { TransactionTrackerService } from '../transactions/transaction-tracker.service';
 
 @Injectable()
 export class TelegramCommandRouterService {
   @Inject()
   private readonly errorReplyService!: TelegramErrorReplyService;
+
+  @Inject()
+  private readonly transactionTrackerService!: TransactionTrackerService;
 
   public constructor(
     private readonly settingsHandler: TelegramSettingsHandler,
@@ -142,6 +147,39 @@ export class TelegramCommandRouterService {
       await this.portfolioService.handleFavorites(context, from.id.toString());
     } catch (error: unknown) {
       await this.errorReplyService.replyWithError(context, 'Favorites command failed', error);
+    }
+  }
+
+  public async handleTx(context: Context): Promise<void> {
+    const from = context.from;
+    const text = this.getMessageText(context.message);
+
+    if (!from || text === '') {
+      await context.reply('Укажи хэш транзакции. Пример: /tx 0x123...');
+      return;
+    }
+
+    try {
+      const hash = text.replace(/^\/tx\s*/i, '').trim();
+
+      if (hash === '') {
+        await context.reply('Укажи хэш транзакции. Пример: /tx 0x123...');
+        return;
+      }
+
+      const tx = await this.transactionTrackerService.getStatus(hash);
+
+      if (!tx) {
+        await context.reply('Транзакция не найдена.', { parse_mode: 'HTML' });
+        return;
+      }
+
+      await context.reply(buildTransactionStatusMessage(tx), {
+        parse_mode: 'HTML',
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (error: unknown) {
+      await this.errorReplyService.replyWithError(context, 'Tx command failed', error);
     }
   }
 

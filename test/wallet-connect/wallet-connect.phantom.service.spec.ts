@@ -111,6 +111,9 @@ describe('WalletConnectPhantomService', () => {
         swapExecutionAuditService: SwapExecutionAuditService;
       }
     ).swapExecutionAuditService = auditService as SwapExecutionAuditService;
+    (service as unknown as Record<string, unknown>)['transactionTrackerService'] = {
+      track: vi.fn().mockResolvedValue(undefined),
+    };
 
     const session = await service.createSession({
       userId: '12345',

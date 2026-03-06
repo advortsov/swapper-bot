@@ -33,6 +33,7 @@ import { HistoryModule } from '../history/history.module';
 import { PriceModule } from '../price/price.module';
 import { SettingsModule } from '../settings/settings.module';
 import { SwapModule } from '../swap/swap.module';
+import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
 
 @Module({
@@ -43,6 +44,7 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
     FavoritesModule,
     AlertsModule,
     HistoryModule,
+    TransactionsModule,
     WalletConnectModule,
     AllowanceModule,
   ],

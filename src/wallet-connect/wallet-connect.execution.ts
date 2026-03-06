@@ -22,6 +22,7 @@ import { InsufficientAllowanceException } from '../allowance/insufficient-allowa
 import type { IWalletConnectApprovalPayload } from '../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import type { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
+import type { TransactionTrackerService } from '../transactions/transaction-tracker.service';
 
 interface IWalletConnectExecutionDeps {
   allowanceService: AllowanceService;
@@ -36,6 +37,7 @@ interface IWalletConnectExecutionDeps {
   ) => Promise<string>;
   swapExecutionAuditService: SwapExecutionAuditService;
   telegramBotToken: string;
+  transactionTracker?: TransactionTrackerService;
 }
 
 export async function executeWalletConnectApprove(input: {
@@ -143,6 +145,14 @@ export async function executeWalletConnectSwap(input: {
       swapPayload.feeMode,
       transactionHash,
     );
+    if (deps.transactionTracker) {
+      await deps.transactionTracker.track({
+        hash: transactionHash,
+        chain: swapPayload.chain,
+        userId,
+        executionId: swapPayload.executionId,
+      });
+    }
     await sendSwapSuccessMessage(deps, userId, swapPayload, transactionHash);
   } catch (error: unknown) {
     if (error instanceof InsufficientAllowanceException) {

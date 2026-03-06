@@ -27,6 +27,7 @@ import { getWalletConnectErrorMessage } from './wallet-connect.utils';
 import type { ISwapTransaction } from '../aggregators/interfaces/aggregator.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
+import { TransactionTrackerService } from '../transactions/transaction-tracker.service';
 
 @Injectable()
 export class WalletConnectPhantomService {
@@ -35,6 +36,9 @@ export class WalletConnectPhantomService {
 
   @Inject()
   private readonly swapExecutionAuditService!: SwapExecutionAuditService;
+
+  @Inject()
+  private readonly transactionTrackerService!: TransactionTrackerService;
 
   public constructor(
     private readonly linksService: WalletConnectPhantomLinksService,
@@ -192,6 +196,12 @@ export class WalletConnectPhantomService {
         swapPayload.feeMode,
         result.transactionHash,
       );
+      await this.transactionTrackerService.track({
+        hash: result.transactionHash,
+        chain: 'solana',
+        userId: session.userId,
+        executionId: swapPayload.executionId,
+      });
 
       return result;
     } catch (error: unknown) {

@@ -8,6 +8,7 @@ import { AllowanceService } from '../allowance/allowance.service';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
+import { TransactionTrackerService } from '../transactions/transaction-tracker.service';
 import type { IWalletConnectSession } from './interfaces/wallet-connect.interface';
 import { WalletConnectClientService } from './wallet-connect.client.service';
 import {
@@ -33,6 +34,9 @@ export class WalletConnectApprovedSessionService {
 
   @Inject()
   private readonly allowanceService!: AllowanceService;
+
+  @Inject()
+  private readonly transactionTrackerService!: TransactionTrackerService;
 
   public constructor(
     private readonly clientService: WalletConnectClientService,
@@ -116,6 +120,7 @@ export class WalletConnectApprovedSessionService {
     ) => Promise<string>;
     swapExecutionAuditService: SwapExecutionAuditService;
     telegramBotToken: string;
+    transactionTracker: TransactionTrackerService;
   } {
     return {
       allowanceService: this.allowanceService,
@@ -125,6 +130,7 @@ export class WalletConnectApprovedSessionService {
       requestWalletExecution: this.requestWalletExecution.bind(this),
       swapExecutionAuditService: this.swapExecutionAuditService,
       telegramBotToken: this.telegramBotToken,
+      transactionTracker: this.transactionTrackerService,
     };
   }
 

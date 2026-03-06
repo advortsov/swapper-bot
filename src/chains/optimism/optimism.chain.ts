@@ -4,7 +4,7 @@ import { createPublicClient, http, isAddress } from 'viem';
 import { optimism } from 'viem/chains';
 
 import { BusinessException } from '../../common/exceptions/business.exception';
-import type { ChainType, IChain } from '../interfaces/chain.interface';
+import type { ChainType, IChain, ITransactionReceipt } from '../interfaces/chain.interface';
 
 const NATIVE_ETH_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
 const ETH_DECIMALS = 18;
@@ -68,5 +68,22 @@ export class OptimismChain implements IChain {
       this.configService.get<string>('EXPLORER_URL_OPTIMISM') ??
       'https://optimistic.etherscan.io/tx/';
     return `${baseUrl}${txHash}`;
+  }
+
+  public async getTransactionReceipt(txHash: string): Promise<ITransactionReceipt | null> {
+    try {
+      const receipt = await this.client.getTransactionReceipt({
+        hash: txHash as `0x${string}`,
+      });
+
+      return {
+        status: receipt.status === 'success' ? 'confirmed' : 'failed',
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        effectiveGasPrice: receipt.effectiveGasPrice.toString(),
+      };
+    } catch {
+      return null;
+    }
   }
 }

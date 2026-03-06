@@ -11,6 +11,9 @@ export {
   buildFavoriteQuoteMessage,
   buildFavoritesMessage,
   buildHistoryMessage,
+  buildTransactionConfirmedMessage,
+  buildTransactionFailedMessage,
+  buildTransactionStatusMessage,
   type IFavoriteViewItem,
 } from './telegram.message-formatters.portfolio';
 export {

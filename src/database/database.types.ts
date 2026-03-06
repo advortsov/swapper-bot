@@ -78,6 +78,10 @@ export interface ISwapExecutionsTable {
   error_message: string | null;
   created_at: Generated<Date>;
   executed_at: Date | null;
+  transaction_status: string | null;
+  confirmed_at: Date | null;
+  gas_used: string | null;
+  effective_gas_price: string | null;
 }
 
 export interface IFavoritePairsTable {
@@ -106,6 +110,21 @@ export interface IPriceAlertsTable {
   last_observed_aggregator: string | null;
 }
 
+export interface ITrackedTransactionsTable {
+  hash: string;
+  chain: string;
+  user_id: string;
+  execution_id: string;
+  status: string;
+  submitted_at: Generated<Date>;
+  confirmed_at: Date | null;
+  failed_at: Date | null;
+  block_number: string | null;
+  gas_used: string | null;
+  effective_gas_price: string | null;
+  error_message: string | null;
+}
+
 export interface IDatabase {
   users: IUsersTable;
   tokens: ITokensTable;
@@ -115,4 +134,5 @@ export interface IDatabase {
   swap_executions: ISwapExecutionsTable;
   favorite_pairs: IFavoritePairsTable;
   price_alerts: IPriceAlertsTable;
+  tracked_transactions: ITrackedTransactionsTable;
 }

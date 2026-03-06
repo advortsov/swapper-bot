@@ -21,6 +21,7 @@ import {
 import { executeWalletConnectApprove, executeWalletConnectSwap } from './wallet-connect.execution';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { SwapExecutionAuditService } from '../swap/swap-execution-audit.service';
+import { TransactionTrackerService } from '../transactions/transaction-tracker.service';
 
 @Injectable()
 export class WalletConnectConnectedWalletService {
@@ -37,6 +38,7 @@ export class WalletConnectConnectedWalletService {
     private readonly clientService: WalletConnectClientService,
     private readonly configService: ConfigService,
     private readonly swapExecutionAuditService: SwapExecutionAuditService,
+    private readonly transactionTrackerService: TransactionTrackerService,
   ) {
     this.telegramBotToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '';
   }
@@ -116,6 +118,7 @@ export class WalletConnectConnectedWalletService {
     ) => Promise<string>;
     swapExecutionAuditService: SwapExecutionAuditService;
     telegramBotToken: string;
+    transactionTracker: TransactionTrackerService;
   } {
     return {
       allowanceService: this.allowanceService,
@@ -125,6 +128,7 @@ export class WalletConnectConnectedWalletService {
       requestWalletExecution: this.requestWalletExecution.bind(this),
       swapExecutionAuditService: this.swapExecutionAuditService,
       telegramBotToken: this.telegramBotToken,
+      transactionTracker: this.transactionTrackerService,
     };
   }
 

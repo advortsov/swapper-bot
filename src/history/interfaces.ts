@@ -13,4 +13,9 @@ export interface ISwapHistoryItem {
   feeAmount: string;
   feeAmountSymbol: string | null;
   txHash: string | null;
+  transactionStatus: string | null;
+  confirmedAt: string | null;
+  gasUsed: string | null;
+  effectiveGasPrice: string | null;
+  explorerUrl: string | null;
 }

@@ -93,6 +93,28 @@ export class SwapExecutionsRepository {
       .execute();
   }
 
+  public async updateTransactionStatus(
+    executionId: string,
+    data: {
+      transactionStatus: string;
+      confirmedAt?: Date;
+      gasUsed?: string | null;
+      effectiveGasPrice?: string | null;
+    },
+  ): Promise<void> {
+    await this.databaseService
+      .getConnection()
+      .updateTable('swap_executions')
+      .set({
+        transaction_status: data.transactionStatus,
+        confirmed_at: data.confirmedAt ?? null,
+        gas_used: data.gasUsed ?? null,
+        effective_gas_price: data.effectiveGasPrice ?? null,
+      })
+      .where('id', '=', executionId)
+      .execute();
+  }
+
   public async findIntentId(executionId: string): Promise<string | null> {
     const row = await this.databaseService
       .getConnection()

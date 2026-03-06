@@ -2,6 +2,7 @@ import { formatAmount, formatPair, formatTxHash } from './telegram.message-forma
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import type { IFavoritePairView } from '../favorites/interfaces/favorite-pair.interface';
 import type { ISwapHistoryItem } from '../history/interfaces';
+import type { ITrackedTransaction } from '../transactions/interfaces/transaction-tracker.interface';
 import { escapeHtml } from '../wallet-connect/wallet-connect.utils';
 
 interface IFavoriteViewItem {
@@ -68,8 +69,16 @@ export function buildHistoryMessage(items: readonly ISwapHistoryItem[]): string 
       `💸 Gross: ${formatAmount(item.grossToAmount, item.toSymbol)}`,
       `🤖 Fee: ${formatAmount(item.feeAmount, item.feeAmountSymbol ?? item.toSymbol)}`,
       `🕒 ${escapeHtml(item.executedAt ?? 'неизвестно')}`,
-      `🧾 Tx: ${formatTxHash(item.txHash)}`,
+      `🧾 Tx: ${formatTxHash(item.txHash)}${item.explorerUrl ? ` <a href="${escapeHtml(item.explorerUrl)}">↗</a>` : ''}`,
     );
+
+    if (item.transactionStatus) {
+      lines.push(`📡 On-chain: ${escapeHtml(item.transactionStatus)}`);
+    }
+
+    if (item.gasUsed) {
+      lines.push(`⛽ Gas: ${escapeHtml(item.gasUsed)}`);
+    }
   }
 
   return lines.join('\n');
@@ -106,6 +115,84 @@ export function buildAlertTriggeredMessage(input: {
     `✅ Текущий net: ${formatAmount(input.currentToAmount, input.toTokenSymbol)}`,
     `🏆 Лучший агрегатор: <code>${escapeHtml(input.aggregator)}</code>`,
   ].join('\n');
+}
+
+export function buildTransactionConfirmedMessage(data: {
+  chain: ChainType;
+  hash: string;
+  blockNumber: string | null;
+  gasUsed: string | null;
+  effectiveGasPrice: string | null;
+}): string {
+  const lines = [
+    '✅ <b>Транзакция подтверждена</b>',
+    '',
+    `🌐 Сеть: <code>${escapeHtml(data.chain)}</code>`,
+    `🧾 Tx: <code>${escapeHtml(data.hash)}</code>`,
+  ];
+
+  if (data.blockNumber) {
+    lines.push(`📦 Блок: ${escapeHtml(data.blockNumber)}`);
+  }
+
+  if (data.gasUsed) {
+    lines.push(`⛽ Gas used: ${escapeHtml(data.gasUsed)}`);
+  }
+
+  if (data.effectiveGasPrice) {
+    lines.push(`💰 Gas price: ${escapeHtml(data.effectiveGasPrice)}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function buildTransactionFailedMessage(data: {
+  chain: ChainType;
+  hash: string;
+  errorMessage: string;
+}): string {
+  return [
+    '❌ <b>Транзакция не прошла</b>',
+    '',
+    `🌐 Сеть: <code>${escapeHtml(data.chain)}</code>`,
+    `🧾 Tx: <code>${escapeHtml(data.hash)}</code>`,
+    `⚠️ Ошибка: ${escapeHtml(data.errorMessage)}`,
+  ].join('\n');
+}
+
+export function buildTransactionStatusMessage(tx: ITrackedTransaction): string {
+  const statusMap: Record<string, { emoji: string; label: string }> = {
+    confirmed: { emoji: '✅', label: 'Подтверждена' },
+    failed: { emoji: '❌', label: 'Не прошла' },
+  };
+  const { emoji, label } = statusMap[tx.status] ?? { emoji: '⏳', label: 'В ожидании' };
+
+  const lines = [
+    `${emoji} <b>Статус транзакции: ${label}</b>`,
+    '',
+    `🌐 Сеть: <code>${escapeHtml(tx.chain)}</code>`,
+    `🧾 Tx: <code>${escapeHtml(tx.hash)}</code>`,
+    `🕒 Отправлена: ${escapeHtml(tx.submittedAt)}`,
+  ];
+
+  pushOptionalLine(lines, tx.confirmedAt, (v) => `✅ Подтверждена: ${escapeHtml(v)}`);
+  pushOptionalLine(lines, tx.failedAt, (v) => `❌ Ошибка: ${escapeHtml(v)}`);
+  pushOptionalLine(lines, tx.blockNumber, (v) => `📦 Блок: ${escapeHtml(v)}`);
+  pushOptionalLine(lines, tx.gasUsed, (v) => `⛽ Gas used: ${escapeHtml(v)}`);
+  pushOptionalLine(lines, tx.effectiveGasPrice, (v) => `💰 Gas price: ${escapeHtml(v)}`);
+  pushOptionalLine(lines, tx.errorMessage, (v) => `⚠️ Ошибка: ${escapeHtml(v)}`);
+
+  return lines.join('\n');
+}
+
+function pushOptionalLine(
+  lines: string[],
+  value: string | null,
+  format: (v: string) => string,
+): void {
+  if (value) {
+    lines.push(format(value));
+  }
 }
 
 export type { IFavoriteViewItem };

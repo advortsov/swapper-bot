@@ -37,9 +37,18 @@ describe('SwapHistoryService', () => {
       limit: vi.fn().mockReturnThis(),
       execute: vi.fn().mockResolvedValue(rows),
     };
-    const service = new SwapHistoryService({
-      getConnection: vi.fn().mockReturnValue(connection),
-    } as never);
+    const mockChains = [
+      {
+        name: 'ethereum',
+        buildExplorerUrl: (txHash: string) => `https://etherscan.io/tx/${txHash}`,
+      },
+    ];
+    const service = new SwapHistoryService(
+      {
+        getConnection: vi.fn().mockReturnValue(connection),
+      } as never,
+      mockChains as never,
+    );
 
     const result = await service.listRecent('42');
 

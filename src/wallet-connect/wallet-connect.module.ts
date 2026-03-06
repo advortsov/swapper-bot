@@ -19,11 +19,13 @@ import { AggregatorsModule } from '../aggregators/aggregators.module';
 import { AllowanceModule } from '../allowance/allowance.module';
 import { ChainsModule } from '../chains/chains.module';
 import { SwapModule } from '../swap/swap.module';
+import { TransactionsModule } from '../transactions/transactions.module';
 
 @Module({
   imports: [
     AggregatorsModule,
     ChainsModule,
+    TransactionsModule,
     forwardRef(() => AllowanceModule),
     forwardRef(() => SwapModule),
   ],

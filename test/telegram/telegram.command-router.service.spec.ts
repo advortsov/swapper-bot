@@ -29,6 +29,7 @@ describe('TelegramCommandRouterService', () => {
     );
     Object.assign(service, {
       errorReplyService: {} as never,
+      transactionTrackerService: {} as never,
     });
 
     await service.handleText(createContext() as never);

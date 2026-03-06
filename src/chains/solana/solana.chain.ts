@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Connection, PublicKey, VersionedTransaction } from '@solana/web3.js';
 
 import { BusinessException } from '../../common/exceptions/business.exception';
-import type { ChainType, IChain } from '../interfaces/chain.interface';
+import type { ChainType, IChain, ITransactionReceipt } from '../interfaces/chain.interface';
 
 const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
 const DEFAULT_SOLANA_EXPLORER_URL = 'https://solscan.io/tx/';
@@ -93,5 +93,40 @@ export class SolanaChain implements IChain {
     const baseUrl =
       this.configService.get<string>('EXPLORER_URL_SOLANA') ?? DEFAULT_SOLANA_EXPLORER_URL;
     return `${baseUrl}${txHash}`;
+  }
+
+  public async getTransactionReceipt(txHash: string): Promise<ITransactionReceipt | null> {
+    try {
+      const result = await this.connection.getSignatureStatuses([txHash]);
+      const status = result.value[0];
+
+      if (!status) {
+        return null;
+      }
+
+      if (status.confirmationStatus !== 'finalized' && status.confirmationStatus !== 'confirmed') {
+        return null;
+      }
+
+      const blockNumber = BigInt(status.slot);
+
+      if (status.err) {
+        return {
+          status: 'failed',
+          blockNumber,
+          gasUsed: null,
+          effectiveGasPrice: null,
+        };
+      }
+
+      return {
+        status: 'confirmed',
+        blockNumber,
+        gasUsed: null,
+        effectiveGasPrice: null,
+      };
+    } catch {
+      return null;
+    }
   }
 }

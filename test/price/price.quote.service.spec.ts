@@ -115,6 +115,7 @@ function createFakeChain(name: ChainType): IChain {
     getTokenDecimals: async () => 18,
     validateAddress: () => true,
     buildExplorerUrl: (txHash: string) => txHash,
+    getTransactionReceipt: async () => null,
   };
 }
 

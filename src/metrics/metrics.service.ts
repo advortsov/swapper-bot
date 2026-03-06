@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
+import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 const BUCKET_0_05 = 0.05;
 const BUCKET_0_1 = 0.1;
@@ -9,6 +9,12 @@ const BUCKET_0_5 = 0.5;
 const BUCKET_1 = 1;
 const BUCKET_2 = 2;
 const BUCKET_5 = 5;
+const BUCKET_10 = 10;
+const BUCKET_30 = 30;
+const BUCKET_60 = 60;
+const BUCKET_120 = 120;
+const BUCKET_300 = 300;
+const BUCKET_600 = 600;
 const DECIMAL_BASE = 10;
 
 export interface IExternalRequestMetric {
@@ -33,6 +39,9 @@ export class MetricsService {
   private readonly swapFeeMissingConfigurationCounter: Counter<'aggregator' | 'chain'>;
   private readonly swapIntentInvalidCallbackCounter: Counter;
   private readonly swapIntentExpiredCounter: Counter;
+  private readonly trackedTransactionsCounter: Counter<'chain' | 'status'>;
+  private readonly trackedTransactionsPendingGauge: Gauge;
+  private readonly transactionConfirmationLatency: Histogram<'chain'>;
 
   public constructor(configService: ConfigService) {
     this.enabled =
@@ -91,6 +100,13 @@ export class MetricsService {
       'Total expired swap intents',
       [],
     );
+    this.trackedTransactionsCounter = this.createCounter(
+      'tracked_transactions_total',
+      'Total tracked transactions',
+      ['chain', 'status'],
+    );
+    this.trackedTransactionsPendingGauge = this.createTrackedTransactionsPendingGauge();
+    this.transactionConfirmationLatency = this.createTransactionConfirmationLatencyHistogram();
   }
 
   public incrementPriceRequest(status: 'success' | 'error'): void {
@@ -197,6 +213,30 @@ export class MetricsService {
     this.swapIntentExpiredCounter.inc();
   }
 
+  public incrementTrackedTransaction(chain: string, status: string): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    this.trackedTransactionsCounter.inc({ chain, status });
+  }
+
+  public setTrackedTransactionsPending(count: number): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    this.trackedTransactionsPendingGauge.set(count);
+  }
+
+  public observeTransactionConfirmationLatency(chain: string, seconds: number): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    this.transactionConfirmationLatency.observe({ chain }, seconds);
+  }
+
   public async getMetrics(): Promise<string> {
     if (!this.enabled) {
       return '# metrics are disabled\n';
@@ -225,6 +265,24 @@ export class MetricsService {
       labelNames: ['provider', 'method', 'status_code'],
       registers: [this.registry],
       buckets: [BUCKET_0_05, BUCKET_0_1, BUCKET_0_25, BUCKET_0_5, BUCKET_1, BUCKET_2, BUCKET_5],
+    });
+  }
+
+  private createTrackedTransactionsPendingGauge(): Gauge {
+    return new Gauge({
+      name: 'tracked_transactions_pending',
+      help: 'Current number of pending tracked transactions',
+      registers: [this.registry],
+    });
+  }
+
+  private createTransactionConfirmationLatencyHistogram(): Histogram<'chain'> {
+    return new Histogram({
+      name: 'transaction_confirmation_latency_seconds',
+      help: 'Time from submission to confirmation',
+      labelNames: ['chain'],
+      registers: [this.registry],
+      buckets: [BUCKET_1, BUCKET_2, BUCKET_5, BUCKET_10, BUCKET_30, BUCKET_60, BUCKET_120, BUCKET_300, BUCKET_600],
     });
   }
 }

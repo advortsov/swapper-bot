@@ -30,6 +30,7 @@ export class TelegramUpdateHandler {
       this.commandRouter.handleFavorites(context),
     );
     bot.command('history', async (context: Context) => this.commandRouter.handleHistory(context));
+    bot.command('tx', async (context: Context) => this.commandRouter.handleTx(context));
     this.settingsHandler.register(bot);
     bot.action(/.*/, async (context: Context) => this.callbackRouter.handleAction(context));
     bot.on(message('text'), async (context: Context) => this.commandRouter.handleText(context));

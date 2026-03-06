@@ -16,6 +16,7 @@ import { PriceModule } from './price/price.module';
 import { SwapModule } from './swap/swap.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { TokensModule } from './tokens/tokens.module';
+import { TransactionsModule } from './transactions/transactions.module';
 import { WalletConnectModule } from './wallet-connect/wallet-connect.module';
 
 const nodeEnvironment = process.env['NODE_ENV'] ?? 'development';
@@ -45,6 +46,7 @@ const envFilePath = [
     FavoritesModule,
     AlertsModule,
     HistoryModule,
+    TransactionsModule,
     WalletConnectModule,
     SwapModule,
     TelegramModule,
