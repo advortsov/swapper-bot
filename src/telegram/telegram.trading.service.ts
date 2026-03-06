@@ -93,6 +93,31 @@ export class TelegramTradingService {
     return this.telegramTradingParserService.isApproveCallback(data);
   }
 
+  public isRiskCallback(data: string): boolean {
+    return this.telegramTradingParserService.isRiskCallback(data);
+  }
+
+  public async handleRiskCallback(
+    context: Context,
+    userId: string,
+    data: string,
+    connectionsService: TelegramConnectionsService,
+  ): Promise<void> {
+    const confirmToken = this.telegramTradingParserService.parseRiskConfirmToken(data);
+
+    if (confirmToken === 'cancel') {
+      await context.answerCbQuery('Своп отменён');
+      return;
+    }
+
+    await this.telegramTradingQuoteService.handleRiskConfirmCallback(
+      context,
+      userId,
+      confirmToken,
+      connectionsService,
+    );
+  }
+
   private async upsertUser(userId: string, username: string | null): Promise<void> {
     await this.usersRepository.upsertUser({ id: userId, username });
   }

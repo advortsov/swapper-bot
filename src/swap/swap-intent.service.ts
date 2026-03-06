@@ -22,10 +22,22 @@ const DEFAULT_QUOTE_TTL_SECONDS = 300;
 const MIN_QUOTE_TTL_SECONDS = 1;
 const CALLBACK_TOKEN_BYTES = 9;
 const HASH_ENCODING = 'hex';
+const RISK_CONFIRMATION_TTL_MS = 120_000;
+
+export interface IRiskConfirmationData {
+  userId: string;
+  consumedIntent: IConsumedSwapIntent;
+  selectedQuote: IStoredProviderQuoteSnapshot;
+  slippage: number;
+}
 
 @Injectable()
 export class SwapIntentService {
   private readonly quoteTtlSeconds: number;
+  private readonly pendingRiskConfirmations = new Map<
+    string,
+    IRiskConfirmationData & { expiresAt: number }
+  >();
 
   public constructor(
     private readonly configService: ConfigService,
@@ -63,6 +75,8 @@ export class SwapIntentService {
         feeAssetSide: quote.feeAssetSide,
         executionFee: quote.executionFee,
         estimatedGasUsd: quote.estimatedGasUsd,
+        priceImpactPercent: quote.priceImpactPercent,
+        routeHops: quote.routeHops,
         totalNetworkFeeWei: quote.totalNetworkFeeWei,
         rawQuoteHash: this.hashPayload(quote.rawQuote),
       } satisfies IStoredProviderQuoteSnapshot;
@@ -164,6 +178,47 @@ export class SwapIntentService {
     providerReference: string,
   ): Promise<void> {
     await this.swapExecutionAuditService.attachProviderReference(executionId, providerReference);
+  }
+
+  public storeRiskConfirmation(data: {
+    userId: string;
+    consumedIntent: IConsumedSwapIntent;
+    selectedQuote: IStoredProviderQuoteSnapshot;
+    slippage: number;
+  }): string {
+    const confirmToken = randomBytes(CALLBACK_TOKEN_BYTES).toString('base64url');
+
+    this.pendingRiskConfirmations.set(confirmToken, {
+      ...data,
+      expiresAt: Date.now() + RISK_CONFIRMATION_TTL_MS,
+    });
+
+    return confirmToken;
+  }
+
+  public consumeRiskConfirmation(userId: string, confirmToken: string): IRiskConfirmationData {
+    const stored = this.pendingRiskConfirmations.get(confirmToken);
+
+    if (!stored) {
+      throw new BusinessException('Подтверждение не найдено или уже использовано');
+    }
+
+    this.pendingRiskConfirmations.delete(confirmToken);
+
+    if (stored.userId !== userId) {
+      throw new BusinessException('Подтверждение не найдено или уже использовано');
+    }
+
+    if (Date.now() > stored.expiresAt) {
+      throw new BusinessException('Время подтверждения истекло. Отправь /swap заново.');
+    }
+
+    return {
+      userId: stored.userId,
+      consumedIntent: stored.consumedIntent,
+      selectedQuote: stored.selectedQuote,
+      slippage: stored.slippage,
+    };
   }
 
   private toConsumedIntent(result: IConsumeSwapIntentSelectionResult): IConsumedSwapIntent {

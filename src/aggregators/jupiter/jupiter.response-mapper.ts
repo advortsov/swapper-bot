@@ -3,6 +3,7 @@ import type { IQuoteRequest, IQuoteResponse } from '../interfaces/aggregator.int
 
 export interface IJupiterQuoteResponse {
   outAmount: string;
+  priceImpactPct?: string;
   platformFee?: {
     amount: string;
   };
@@ -79,7 +80,18 @@ export function toJupiterQuoteResponse(
     feeAssetSide: 'none',
     executionFee: params.feeConfig,
     estimatedGasUsd: null,
+    priceImpactPercent: parseJupiterPriceImpact(responseBody.priceImpactPct),
+    routeHops: null,
     totalNetworkFeeWei: null,
     rawQuote: responseBody,
   };
+}
+
+export function parseJupiterPriceImpact(value: string | undefined): number | null {
+  if (value === undefined) {
+    return null;
+  }
+
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

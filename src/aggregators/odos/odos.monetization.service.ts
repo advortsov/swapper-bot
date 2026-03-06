@@ -40,6 +40,8 @@ export class OdosMonetizationService {
       feeAssetSide: 'none',
       executionFee: params.feeConfig,
       estimatedGasUsd: responseBody.gasEstimateValue ?? null,
+      priceImpactPercent: null,
+      routeHops: null,
       totalNetworkFeeWei: null,
       rawQuote: responseBody,
     };
@@ -89,6 +91,8 @@ export class OdosMonetizationService {
       feeAssetSide: 'buy',
       executionFee: input.params.feeConfig,
       estimatedGasUsd: input.feeQuoteBody.gasEstimateValue ?? null,
+      priceImpactPercent: null,
+      routeHops: null,
       totalNetworkFeeWei: null,
       rawQuote: {
         feeQuote: input.feeQuoteBody,

@@ -33,6 +33,9 @@ export interface IWalletConnectSwapPayload {
   feeDisplayLabel: string;
   feeAssetSide: FeeAssetSide;
   executionFee: IExecutionFeeConfig;
+  estimatedGasUsd: number | null;
+  priceImpactPercent: number | null;
+  routeHops: number | null;
 }
 
 export interface ICreateWalletConnectSessionInput {

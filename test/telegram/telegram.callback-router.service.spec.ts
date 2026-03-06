@@ -9,6 +9,7 @@ describe('TelegramCallbackRouterService', () => {
 
   it('должен маршрутизировать swap callback в trading service', async () => {
     const tradingService = {
+      isRiskCallback: vi.fn().mockReturnValue(false),
       isSwapCallback: vi.fn().mockImplementation((data: string) => data.startsWith('sw:')),
       isApproveCallback: vi.fn().mockReturnValue(false),
       handleSwapCallback: vi.fn().mockResolvedValue(undefined),
@@ -54,6 +55,7 @@ describe('TelegramCallbackRouterService', () => {
     };
     const service = new TelegramCallbackRouterService(
       {
+        isRiskCallback: vi.fn().mockReturnValue(false),
         isSwapCallback: vi.fn().mockReturnValue(false),
         isApproveCallback: vi.fn().mockReturnValue(false),
       } as never,

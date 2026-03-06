@@ -45,6 +45,8 @@ const consumedIntent = {
         feeAssetSide: 'none' as const,
         executionFee: createDisabledFeeConfig('paraswap', 'ethereum'),
         estimatedGasUsd: null,
+        priceImpactPercent: null,
+        routeHops: null,
         totalNetworkFeeWei: null,
         rawQuoteHash: 'hash',
       },

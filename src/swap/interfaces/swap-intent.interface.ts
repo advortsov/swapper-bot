@@ -23,6 +23,8 @@ export interface IStoredProviderQuoteSnapshot {
   feeAssetSide: FeeAssetSide;
   executionFee: IExecutionFeeConfig;
   estimatedGasUsd: number | null;
+  priceImpactPercent: number | null;
+  routeHops: number | null;
   totalNetworkFeeWei: string | null;
   rawQuoteHash: string;
 }

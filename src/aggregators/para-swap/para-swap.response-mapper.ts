@@ -67,6 +67,8 @@ export function toParaSwapQuoteResponse(
     feeAssetSide: 'none',
     executionFee: params.feeConfig,
     estimatedGasUsd: parseParaSwapGasUsd(body.priceRoute.gasCostUSD),
+    priceImpactPercent: computeParaSwapPriceImpact(body.priceRoute.srcUSD, body.priceRoute.destUSD),
+    routeHops: null,
     totalNetworkFeeWei: null,
     rawQuote: body,
   };
@@ -108,4 +110,24 @@ export function parseParaSwapGasUsd(value: string | undefined): number | null {
 
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+const PERCENT_MULTIPLIER = 100;
+
+export function computeParaSwapPriceImpact(
+  srcUSD: string | undefined,
+  destUSD: string | undefined,
+): number | null {
+  if (srcUSD === undefined || destUSD === undefined) {
+    return null;
+  }
+
+  const src = Number.parseFloat(srcUSD);
+  const dest = Number.parseFloat(destUSD);
+
+  if (!Number.isFinite(src) || !Number.isFinite(dest) || src <= 0) {
+    return null;
+  }
+
+  return ((src - dest) / src) * PERCENT_MULTIPLIER;
 }

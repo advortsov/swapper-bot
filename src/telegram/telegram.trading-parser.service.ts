@@ -22,6 +22,7 @@ const APPROVE_TOKEN_MATCH_INDEX = 2;
 const APPROVE_CHAIN_MATCH_INDEX = 3;
 const SWAP_CALLBACK_PREFIX = 'sw:';
 const APPROVE_CALLBACK_PREFIX = 'apr:';
+const RISK_CALLBACK_PREFIX = 'rsk:';
 
 export interface IApproveCallbackPayload {
   actionToken: string;
@@ -127,6 +128,18 @@ export class TelegramTradingParserService {
 
   public buildSwapCallbackData(selectionToken: string): string {
     return `${SWAP_CALLBACK_PREFIX}${selectionToken}`;
+  }
+
+  public isRiskCallback(data: string): boolean {
+    return data.startsWith(RISK_CALLBACK_PREFIX);
+  }
+
+  public buildRiskConfirmCallbackData(confirmToken: string): string {
+    return `${RISK_CALLBACK_PREFIX}${confirmToken}`;
+  }
+
+  public parseRiskConfirmToken(data: string): string {
+    return data.slice(RISK_CALLBACK_PREFIX.length);
   }
 
   private getMatch(matches: RegExpExecArray, index: number): string {

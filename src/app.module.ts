@@ -13,6 +13,7 @@ import { HealthModule } from './health/health.module';
 import { HistoryModule } from './history/history.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PriceModule } from './price/price.module';
+import { RouteSafetyModule } from './route-safety/route-safety.module';
 import { SwapModule } from './swap/swap.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { TokensModule } from './tokens/tokens.module';
@@ -48,6 +49,7 @@ const envFilePath = [
     HistoryModule,
     TransactionsModule,
     WalletConnectModule,
+    RouteSafetyModule,
     SwapModule,
     TelegramModule,
     HealthModule,

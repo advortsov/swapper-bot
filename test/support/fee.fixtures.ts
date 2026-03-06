@@ -43,6 +43,8 @@ export function createQuoteResponse(input: {
     feeAssetSide: 'none',
     executionFee: createDisabledFeeConfig(input.aggregatorName, input.chain),
     estimatedGasUsd: input.estimatedGasUsd,
+    priceImpactPercent: null,
+    routeHops: null,
     totalNetworkFeeWei: null,
     rawQuote: {},
   };

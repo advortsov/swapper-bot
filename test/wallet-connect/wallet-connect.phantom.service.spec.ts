@@ -141,6 +141,9 @@ describe('WalletConnectPhantomService', () => {
         feeDisplayLabel: 'no fee',
         feeAssetSide: 'none',
         executionFee: createDisabledFeeConfig('jupiter', 'solana'),
+        estimatedGasUsd: null,
+        priceImpactPercent: null,
+        routeHops: null,
       },
     });
 

@@ -22,6 +22,8 @@ export {
   buildPreparedSwapMessage,
   buildPriceMessage,
   buildQrCaption,
+  buildRouteBlockedMessage,
+  buildRouteRiskWarningMessage,
   buildSwapButtonText,
   buildSwapQuotesMessage,
 } from './telegram.message-formatters.trading';

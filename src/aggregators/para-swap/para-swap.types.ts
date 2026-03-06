@@ -24,6 +24,8 @@ export const EXCLUDE_METHODS_WITHOUT_FEE_MODEL = 'true';
 export interface IParaSwapPriceRoute {
   destAmount: string;
   gasCostUSD?: string;
+  srcUSD?: string;
+  destUSD?: string;
   tokenTransferProxy?: string;
   contractAddress?: string;
 }

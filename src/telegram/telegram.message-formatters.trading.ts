@@ -13,6 +13,7 @@ import type {
 } from '../allowance/interfaces/allowance.interface';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import type { IPriceResponse, IProviderQuote } from '../price/interfaces/price.interface';
+import type { IRouteRiskAssessment } from '../route-safety/interfaces/route-risk.interface';
 import type { ISwapQuotesResponse, ISwapSessionResponse } from '../swap/interfaces/swap.interface';
 import { escapeHtml } from '../wallet-connect/wallet-connect.utils';
 
@@ -168,5 +169,51 @@ export function buildQrCaption(
     kind === 'swap' || kind === 'approve'
       ? `⏳ На подтверждение: <code>${escapeHtml(ttlText)}</code>`
       : `⏳ Сессия истекает: <code>${escapeHtml(ttlText)}</code>`,
+  ].join('\n');
+}
+
+const RISK_LEVEL_ICON: Record<string, string> = {
+  low: '🟢',
+  medium: '🟡',
+  high: '🔴',
+  blocked: '🔴',
+};
+
+export function buildRouteRiskWarningMessage(assessment: IRouteRiskAssessment): string {
+  const factorLines = assessment.factors.map((factor) => {
+    const icon = RISK_LEVEL_ICON[factor.level] ?? '⚪';
+
+    if (factor.level === 'low') {
+      return `${icon} ${escapeHtml(factor.name)}: ${escapeHtml(factor.actual)} (в пределах нормы)`;
+    }
+
+    return `${icon} ${escapeHtml(factor.name)}: ${escapeHtml(factor.actual)} (порог: ${escapeHtml(factor.threshold)})`;
+  });
+
+  return [
+    '⚠️ <b>Высокий уровень риска маршрута</b>',
+    '',
+    ...factorLines,
+    '',
+    `Уровень: <b>${escapeHtml(assessment.level.toUpperCase())}</b>`,
+    '',
+    'Подтвердите своп или отмените.',
+  ].join('\n');
+}
+
+export function buildRouteBlockedMessage(assessment: IRouteRiskAssessment): string {
+  const factorLines = assessment.factors
+    .filter((factor) => factor.level === 'blocked' || factor.level === 'high')
+    .map((factor) => {
+      const icon = RISK_LEVEL_ICON[factor.level] ?? '⚪';
+      return `${icon} ${escapeHtml(factor.name)}: ${escapeHtml(factor.actual)} (максимум: ${escapeHtml(factor.threshold)})`;
+    });
+
+  return [
+    '🚫 <b>Маршрут заблокирован</b>',
+    '',
+    ...factorLines,
+    '',
+    'Своп не может быть выполнен. Попробуйте уменьшить сумму или выбрать другую пару.',
   ].join('\n');
 }

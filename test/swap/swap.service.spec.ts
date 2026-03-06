@@ -54,6 +54,8 @@ const selectedQuote = {
   feeAssetSide: 'none' as const,
   executionFee: createDisabledFeeConfig('paraswap', 'ethereum'),
   estimatedGasUsd: 0.23,
+  priceImpactPercent: null,
+  routeHops: null,
   totalNetworkFeeWei: null,
   rawQuoteHash: 'quote-hash',
 };
@@ -93,6 +95,8 @@ describe('SwapService', () => {
     Object.assign(service, {
       swapIntentService: {} as SwapIntentService,
       swapExpirationService: {} as SwapExpirationService,
+      routeRiskService: {},
+      metricsService: {},
     });
 
     const result = await service.getSwapQuotes({
@@ -176,6 +180,13 @@ describe('SwapService', () => {
     Object.assign(service, {
       swapIntentService,
       swapExpirationService,
+      routeRiskService: {
+        evaluate: vi.fn().mockReturnValue({ level: 'low', factors: [] }),
+      },
+      metricsService: {
+        incrementRouteRiskEvaluation: vi.fn(),
+        incrementRouteRiskBlocked: vi.fn(),
+      },
     });
 
     const result = await service.createSwapSessionFromSelection('123', 'tok-1');

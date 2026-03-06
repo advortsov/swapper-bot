@@ -33,6 +33,11 @@ export class TelegramCallbackRouterService {
   }
 
   private async routeAction(context: Context, userId: string, data: string): Promise<void> {
+    if (this.tradingService.isRiskCallback(data)) {
+      await this.tradingService.handleRiskCallback(context, userId, data, this.connectionsService);
+      return;
+    }
+
     if (this.tradingService.isSwapCallback(data)) {
       await this.tradingService.handleSwapCallback(context, userId, data, this.connectionsService);
       return;

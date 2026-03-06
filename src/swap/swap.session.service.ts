@@ -112,6 +112,9 @@ export class SwapSessionService {
       feeDisplayLabel: input.selectedQuote.feeDisplayLabel,
       feeAssetSide: input.selectedQuote.feeAssetSide,
       executionFee: input.selectedQuote.executionFee,
+      estimatedGasUsd: input.selectedQuote.estimatedGasUsd,
+      priceImpactPercent: input.selectedQuote.priceImpactPercent,
+      routeHops: input.selectedQuote.routeHops,
     };
   }
 

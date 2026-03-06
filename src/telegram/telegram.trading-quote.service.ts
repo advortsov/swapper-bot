@@ -1,18 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { Context } from 'telegraf';
 
 import type { IPriceCommandDto } from './dto/price-command.dto';
 import type { ISwapCommandDto } from './dto/swap-command.dto';
 import { TelegramConnectionsService } from './telegram.connections.service';
-import { buildPriceMessage, buildSwapQuotesMessage } from './telegram.message-formatters';
+import {
+  buildPriceMessage,
+  buildRouteBlockedMessage,
+  buildRouteRiskWarningMessage,
+  buildSwapQuotesMessage,
+} from './telegram.message-formatters';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { formatSwapValidity } from './telegram.time';
 import { TelegramTradingButtonsService } from './telegram.trading-buttons.service';
+import { TelegramTradingParserService } from './telegram.trading-parser.service';
 import { PriceService } from '../price/price.service';
+import { HighRiskRouteException } from '../route-safety/high-risk-route.exception';
+import { RouteBlockedException } from '../route-safety/route-blocked.exception';
 import { SwapService } from '../swap/swap.service';
 
 @Injectable()
 export class TelegramTradingQuoteService {
+  @Inject()
+  private readonly telegramTradingParserService!: TelegramTradingParserService;
+
   public constructor(
     private readonly priceService: PriceService,
     private readonly swapService: SwapService,
@@ -94,7 +105,48 @@ export class TelegramTradingQuoteService {
     connectionsService: TelegramConnectionsService,
   ): Promise<void> {
     await context.answerCbQuery('Подготовка свопа...');
-    const session = await this.swapService.createSwapSessionFromSelection(userId, selectionToken);
+
+    try {
+      const session = await this.swapService.createSwapSessionFromSelection(userId, selectionToken);
+      await connectionsService.replySwapSession(context, session);
+    } catch (error) {
+      if (error instanceof RouteBlockedException) {
+        await context.reply(buildRouteBlockedMessage(error.assessment), { parse_mode: 'HTML' });
+        return;
+      }
+
+      if (error instanceof HighRiskRouteException) {
+        await context.reply(buildRouteRiskWarningMessage(error.assessment), {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '⚠️ Подтвердить',
+                  callback_data: this.telegramTradingParserService.buildRiskConfirmCallbackData(
+                    error.confirmToken,
+                  ),
+                },
+                { text: '❌ Отменить', callback_data: 'rsk:cancel' },
+              ],
+            ],
+          },
+        });
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  public async handleRiskConfirmCallback(
+    context: Context,
+    userId: string,
+    confirmToken: string,
+    connectionsService: TelegramConnectionsService,
+  ): Promise<void> {
+    await context.answerCbQuery('Подготовка свопа...');
+    const session = await this.swapService.confirmRiskySwap(userId, confirmToken);
     await connectionsService.replySwapSession(context, session);
   }
 }

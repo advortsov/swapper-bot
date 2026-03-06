@@ -42,6 +42,8 @@ export class MetricsService {
   private readonly trackedTransactionsCounter: Counter<'chain' | 'status'>;
   private readonly trackedTransactionsPendingGauge: Gauge;
   private readonly transactionConfirmationLatency: Histogram<'chain'>;
+  private readonly routeRiskEvaluationsCounter: Counter<'level' | 'chain'>;
+  private readonly routeRiskBlockedCounter: Counter<'chain'>;
 
   public constructor(configService: ConfigService) {
     this.enabled =
@@ -107,6 +109,16 @@ export class MetricsService {
     );
     this.trackedTransactionsPendingGauge = this.createTrackedTransactionsPendingGauge();
     this.transactionConfirmationLatency = this.createTransactionConfirmationLatencyHistogram();
+    this.routeRiskEvaluationsCounter = this.createCounter(
+      'route_risk_evaluations_total',
+      'Total route risk evaluations',
+      ['level', 'chain'],
+    );
+    this.routeRiskBlockedCounter = this.createCounter(
+      'route_risk_blocked_total',
+      'Total blocked routes',
+      ['chain'],
+    );
   }
 
   public incrementPriceRequest(status: 'success' | 'error'): void {
@@ -235,6 +247,22 @@ export class MetricsService {
     }
 
     this.transactionConfirmationLatency.observe({ chain }, seconds);
+  }
+
+  public incrementRouteRiskEvaluation(level: string, chain: string): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    this.routeRiskEvaluationsCounter.inc({ level, chain });
+  }
+
+  public incrementRouteRiskBlocked(chain: string): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    this.routeRiskBlockedCounter.inc({ chain });
   }
 
   public async getMetrics(): Promise<string> {

@@ -36,6 +36,8 @@ export interface IQuoteResponse {
   feeAssetSide: FeeAssetSide;
   executionFee: IExecutionFeeConfig;
   estimatedGasUsd: number | null;
+  priceImpactPercent: number | null;
+  routeHops: number | null;
   totalNetworkFeeWei: string | null;
   rawQuote: unknown;
 }

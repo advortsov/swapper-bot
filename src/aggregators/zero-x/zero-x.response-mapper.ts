@@ -61,6 +61,8 @@ export function toZeroXQuoteResponse(
     feeAssetSide: 'none',
     executionFee: params.feeConfig,
     estimatedGasUsd: null,
+    priceImpactPercent: null,
+    routeHops: null,
     totalNetworkFeeWei: body.totalNetworkFee,
     rawQuote: body,
   };

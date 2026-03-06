@@ -57,6 +57,8 @@ const quoteSelection: IQuoteSelection = {
       feeEnforcedOnExecution: false,
     },
     estimatedGasUsd: null,
+    priceImpactPercent: null,
+    routeHops: null,
     totalNetworkFeeWei: null,
     rawQuote: {},
   },
