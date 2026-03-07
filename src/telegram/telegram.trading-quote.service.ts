@@ -12,27 +12,27 @@ import {
 } from './telegram.message-formatters';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { formatSwapValidity } from './telegram.time';
+import { TelegramTradeTemplatesService } from './telegram.trade-templates.service';
 import { TelegramTradingButtonsService } from './telegram.trading-buttons.service';
 import { TelegramTradingParserService } from './telegram.trading-parser.service';
-import { TelegramTradeTemplatesService } from './telegram.trade-templates.service';
 import { PriceService } from '../price/price.service';
 import { HighRiskRouteException } from '../route-safety/high-risk-route.exception';
 import { RouteBlockedException } from '../route-safety/route-blocked.exception';
 import { SwapService } from '../swap/swap.service';
-
-const MAX_TRADE_PRESETS = 10;
 
 @Injectable()
 export class TelegramTradingQuoteService {
   @Inject()
   private readonly telegramTradingParserService!: TelegramTradingParserService;
 
+  @Inject()
+  private readonly telegramTemplatesService!: TelegramTradeTemplatesService;
+
   public constructor(
     private readonly priceService: PriceService,
     private readonly swapService: SwapService,
     private readonly portfolioService: TelegramPortfolioService,
     private readonly telegramTradingButtonsService: TelegramTradingButtonsService,
-    private readonly telegramTemplatesService: TelegramTradeTemplatesService,
   ) {}
 
   public async handlePrice(

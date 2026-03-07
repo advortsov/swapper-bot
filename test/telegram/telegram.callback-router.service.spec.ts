@@ -12,6 +12,7 @@ describe('TelegramCallbackRouterService', () => {
       isRiskCallback: vi.fn().mockReturnValue(false),
       isSwapCallback: vi.fn().mockImplementation((data: string) => data.startsWith('sw:')),
       isApproveCallback: vi.fn().mockReturnValue(false),
+      isPresetSaveCallback: vi.fn().mockReturnValue(false),
       handleSwapCallback: vi.fn().mockResolvedValue(undefined),
     };
     const service = new TelegramCallbackRouterService(
@@ -58,6 +59,7 @@ describe('TelegramCallbackRouterService', () => {
         isRiskCallback: vi.fn().mockReturnValue(false),
         isSwapCallback: vi.fn().mockReturnValue(false),
         isApproveCallback: vi.fn().mockReturnValue(false),
+        isPresetSaveCallback: vi.fn().mockReturnValue(false),
       } as never,
       portfolioService as never,
       {

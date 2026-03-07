@@ -66,6 +66,7 @@ describe('TelegramUpdateHandler', () => {
       settingsHandler,
       commandRouter,
       callbackRouter,
+      {} as never,
       startHelpService,
     );
 
