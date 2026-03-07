@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 
 import { AssetAlertsService } from './asset-alerts.service';
+import type { IPriceAlertWithFavorite } from './interfaces/price-alert.interface';
 import { PriceAlertsService } from './price-alerts.service';
 import { PriceQuoteService } from '../price/price.quote.service';
 import { buildAlertTriggeredMessage } from '../telegram/telegram.message-formatters';
@@ -70,40 +71,12 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
     alert: Awaited<ReturnType<PriceAlertsService['listActiveBatch']>>[number],
   ): Promise<void> {
     try {
-      // Check quiet hours
-      if (
-        alert.quietHoursStart &&
-        alert.quietHoursEnd &&
-        this.priceAlertsService.isInQuietHours(alert.quietHoursStart, alert.quietHoursEnd)
-      ) {
+      if (this.isAlertInQuietHours(alert)) {
         return;
       }
 
-      const prepared = await this.priceQuoteService.prepare({
-        userId: alert.userId,
-        chain: alert.chain,
-        amount: alert.amount,
-        fromTokenInput: alert.fromTokenAddress,
-        toTokenInput: alert.toTokenAddress,
-        rawCommand: `/favorites ${alert.amount} ${alert.fromTokenSymbol} to ${alert.toTokenSymbol}`,
-        explicitChain: true,
-      });
-      const selection = await this.priceQuoteService.fetchQuoteSelection(prepared);
-      const response = this.priceQuoteService.buildResponse(prepared, selection);
-
-      let shouldTrigger = false;
-
-      // Check based on alert kind
-      if (alert.kind === 'fixed') {
-        shouldTrigger = this.priceAlertsService.shouldTriggerOnCrossing(alert, response.toAmount);
-      } else if (alert.kind === 'percentage' && alert.percentageChange) {
-        shouldTrigger = this.priceAlertsService.shouldTriggerPercentage(alert, response.toAmount);
-      }
-
-      // Check direction alerts
-      if (alert.direction && !shouldTrigger) {
-        shouldTrigger = this.priceAlertsService.shouldTriggerDirection(alert, response.toAmount);
-      }
+      const response = await this.fetchAlertQuote(alert);
+      const shouldTrigger = this.evaluateTrigger(alert, response.toAmount);
 
       await this.priceAlertsService.markObserved(alert.id, response.toAmount, response.aggregator);
 
@@ -111,27 +84,84 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      await this.priceAlertsService.markTriggered(alert.id, response.toAmount, response.aggregator);
-      await this.sendTelegramMessage(
-        alert.userId,
-        buildAlertTriggeredMessage({
-          chain: alert.chain,
-          amount: alert.amount,
-          fromTokenSymbol: alert.fromTokenSymbol,
-          toTokenSymbol: alert.toTokenSymbol,
-          targetToAmount: alert.targetToAmount ?? 'N/A',
-          currentToAmount: response.toAmount,
-          aggregator: response.aggregator,
-        }),
-      );
-
-      // Reset repeatable alert
-      if (alert.repeatable) {
-        await this.priceAlertsService.resetRepeatableAlert(alert.id);
-      }
+      await this.handleTriggeredAlert(alert, response);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Alert ${alert.id} check failed: ${message}`);
+    }
+  }
+
+  private isAlertInQuietHours(
+    alert: Pick<IPriceAlertWithFavorite, 'quietHoursStart' | 'quietHoursEnd'>,
+  ): boolean {
+    return (
+      !!alert.quietHoursStart &&
+      !!alert.quietHoursEnd &&
+      this.priceAlertsService.isInQuietHours(alert.quietHoursStart, alert.quietHoursEnd)
+    );
+  }
+
+  private async fetchAlertQuote(
+    alert: Pick<
+      IPriceAlertWithFavorite,
+      | 'userId'
+      | 'chain'
+      | 'amount'
+      | 'fromTokenAddress'
+      | 'toTokenAddress'
+      | 'fromTokenSymbol'
+      | 'toTokenSymbol'
+    >,
+  ): Promise<{ toAmount: string; aggregator: string }> {
+    const prepared = await this.priceQuoteService.prepare({
+      userId: alert.userId,
+      chain: alert.chain,
+      amount: alert.amount,
+      fromTokenInput: alert.fromTokenAddress,
+      toTokenInput: alert.toTokenAddress,
+      rawCommand: `/favorites ${alert.amount} ${alert.fromTokenSymbol} to ${alert.toTokenSymbol}`,
+      explicitChain: true,
+    });
+    const selection = await this.priceQuoteService.fetchQuoteSelection(prepared);
+    return this.priceQuoteService.buildResponse(prepared, selection);
+  }
+
+  private evaluateTrigger(alert: IPriceAlertWithFavorite, toAmount: string): boolean {
+    let shouldTrigger = false;
+
+    if (alert.kind === 'fixed') {
+      shouldTrigger = this.priceAlertsService.shouldTriggerOnCrossing(alert, toAmount);
+    } else if (alert.kind === 'percentage' && alert.percentageChange) {
+      shouldTrigger = this.priceAlertsService.shouldTriggerPercentage(alert, toAmount);
+    }
+
+    if (alert.direction && !shouldTrigger) {
+      shouldTrigger = this.priceAlertsService.shouldTriggerDirection(alert, toAmount);
+    }
+
+    return shouldTrigger;
+  }
+
+  private async handleTriggeredAlert(
+    alert: IPriceAlertWithFavorite,
+    response: { toAmount: string; aggregator: string },
+  ): Promise<void> {
+    await this.priceAlertsService.markTriggered(alert.id, response.toAmount, response.aggregator);
+    await this.sendTelegramMessage(
+      alert.userId,
+      buildAlertTriggeredMessage({
+        chain: alert.chain,
+        amount: alert.amount,
+        fromTokenSymbol: alert.fromTokenSymbol,
+        toTokenSymbol: alert.toTokenSymbol,
+        targetToAmount: alert.targetToAmount ?? 'N/A',
+        currentToAmount: response.toAmount,
+        aggregator: response.aggregator,
+      }),
+    );
+
+    if (alert.repeatable) {
+      await this.priceAlertsService.resetRepeatableAlert(alert.id);
     }
   }
 

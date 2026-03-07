@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { Context } from 'telegraf';
 
-import { PortfolioService } from '../portfolio/portfolio.service';
-import { buildPortfolioMessage } from './telegram.message-formatters';
 import { TelegramErrorReplyService } from './telegram.error-reply.service';
+import { buildPortfolioMessage } from './telegram.message-formatters';
+import { PortfolioService } from '../portfolio/portfolio.service';
 
 @Injectable()
 export class TelegramPortfolioBalanceService {
@@ -26,11 +26,7 @@ export class TelegramPortfolioBalanceService {
 
       await context.reply(buildPortfolioMessage(summary), { parse_mode: 'HTML' });
     } catch (error: unknown) {
-      await this.errorReplyService.replyWithError(
-        context,
-        'Portfolio command failed',
-        error,
-      );
+      await this.errorReplyService.replyWithError(context, 'Portfolio command failed', error);
     }
   }
 }

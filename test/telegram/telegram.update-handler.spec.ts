@@ -67,8 +67,9 @@ describe('TelegramUpdateHandler', () => {
       commandRouter,
       callbackRouter,
       {} as never,
-      startHelpService,
     );
+    (handler as unknown as { startHelpService: TelegramStartHelpService }).startHelpService =
+      startHelpService;
 
     handler.register(bot as never);
 

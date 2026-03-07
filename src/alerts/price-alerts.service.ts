@@ -190,30 +190,43 @@ export class PriceAlertsService {
       return false;
     }
 
-    const now = new Date();
-    const currentHour = now.getHours();
-    const startParts = quietHoursStart.split(':');
-    const endParts = quietHoursEnd.split(':');
+    const start = this.parseTimeParts(quietHoursStart);
+    const end = this.parseTimeParts(quietHoursEnd);
 
-    if (startParts.length !== 2 || endParts.length !== 2) {
+    if (!start || !end) {
       return false;
     }
 
-    const startHour = Number.parseInt(startParts[0] ?? '0', 10);
-    const endHour = Number.parseInt(endParts[0] ?? '0', 10);
-    const startMin = Number.parseInt(startParts[1] ?? '0', 10);
-    const endMin = Number.parseInt(endParts[1] ?? '0', 10);
+    const currentHour = new Date().getHours();
 
-    if (currentHour < startHour || currentHour > endHour) {
+    return this.isHourInRange(currentHour, start, end);
+  }
+
+  private parseTimeParts(time: string): { hour: number; minute: number } | null {
+    const parts = time.split(':');
+    const EXPECTED_PARTS = 2;
+
+    if (parts.length !== EXPECTED_PARTS) {
+      return null;
+    }
+
+    return {
+      hour: Number.parseInt(parts[0] ?? '0', 10),
+      minute: Number.parseInt(parts[1] ?? '0', 10),
+    };
+  }
+
+  private isHourInRange(
+    currentHour: number,
+    start: { hour: number; minute: number },
+    end: { hour: number; minute: number },
+  ): boolean {
+    if (currentHour < start.hour || currentHour > end.hour) {
       return false;
     }
 
-    if (currentHour === startHour && currentHour === endHour) {
-      if (startMin > endMin) {
-        return false;
-      }
-
-      return true;
+    if (currentHour === start.hour && currentHour === end.hour) {
+      return start.minute <= end.minute;
     }
 
     return false;

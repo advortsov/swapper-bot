@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import type { ChainType } from '../chains/interfaces/chain.interface';
 
+import type { ICreatePresetInput, ITradePresetView } from './interfaces/trade-preset.interface';
 import { TradePresetsRepository } from '../database/repositories/trade-presets.repository';
-import type {
-  ICreatePresetInput,
-  ITradePresetView,
-} from './interfaces/trade-preset.interface';
 
 const DEFAULT_MAX_PRESETS = 10;
 
@@ -18,10 +14,7 @@ export class TradePresetsService {
   }
 
   public async createPreset(input: ICreatePresetInput): Promise<ITradePresetView> {
-    const existing = await this.tradePresetsRepository.findByLabel(
-      input.userId,
-      input.label,
-    );
+    const existing = await this.tradePresetsRepository.findByLabel(input.userId, input.label);
 
     if (existing) {
       throw new Error('Пресет с таким названием уже существует');
@@ -48,10 +41,7 @@ export class TradePresetsService {
     return this.tradePresetsRepository.listByUser(userId);
   }
 
-  public async getPreset(
-    userId: string,
-    presetId: string,
-  ): Promise<ITradePresetView | null> {
+  public async getPreset(userId: string, presetId: string): Promise<ITradePresetView | null> {
     return this.tradePresetsRepository.findById(presetId, userId);
   }
 

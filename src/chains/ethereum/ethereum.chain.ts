@@ -112,7 +112,7 @@ export class EthereumChain implements IChain {
     }
 
     return this.client.readContract({
-      address: tokenAddress as `0x${string}`,
+      address: tokenAddress,
       abi: ERC20_BALANCE_ABI,
       functionName: 'balanceOf',
       args: [walletAddress as `0x${string}`],

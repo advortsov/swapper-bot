@@ -2,15 +2,69 @@ import { Injectable } from '@nestjs/common';
 
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { DatabaseService } from '../database/database.service';
-import type { IDatabase } from '../database/database.types';
 import { FavoritePairsRepository } from '../favorites/favorite-pairs.repository';
 import { TokensRepository } from '../tokens/tokens.repository';
-import type { IPriceAlertRecord } from './interfaces/price-alert.interface';
+import type {
+  IPriceAlertRecord,
+  PriceAlertStatus,
+  AlertKind,
+} from './interfaces/price-alert.interface';
 import type { IPriceAlertWithToken } from './interfaces/token-info.interface';
 
 const PERCENTAGE_MULTIPLIER = 100;
 
 type AlertDirection = 'up' | 'down' | 'cross' | null;
+
+interface IPriceAlertDbRecord {
+  id: string;
+  favorite_id: string | null;
+  user_id: string;
+  target_to_amount: string | null;
+  status: string;
+  created_at: Date;
+  updated_at: Date;
+  last_checked_at: Date | null;
+  triggered_at: Date | null;
+  last_observed_net_to_amount: string | null;
+  last_observed_aggregator: string | null;
+  kind: string;
+  direction: string | null;
+  percentage_change: number | null;
+  repeatable: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  watch_token_address: string | null;
+  watch_chain: string | null;
+}
+
+interface IPriceAlertDbWithToken extends IPriceAlertDbRecord {
+  symbol: string;
+  decimals: number;
+  token_address: string;
+  chain: string;
+}
+
+interface IAssetAlertInsertSet {
+  user_id: string;
+  favorite_id: string | null;
+  target_to_amount: string | null;
+  status: string;
+  kind: string;
+  direction: string | null;
+  percentage_change: number | null;
+  repeatable: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  watch_token_address: string;
+  watch_chain: string;
+}
+
+interface IAssetAlertUpdateSet {
+  updated_at: Date;
+  last_checked_at: Date;
+  last_observed_net_to_amount?: string;
+  last_observed_aggregator?: string | null;
+}
 
 @Injectable()
 export class AssetAlertsService {
@@ -39,20 +93,7 @@ export class AssetAlertsService {
       throw new Error('Token not found');
     }
 
-    const insertValues: {
-      user_id: string;
-      favorite_id: string | null;
-      target_to_amount: string | null;
-      status: string;
-      kind: string;
-      direction: string | null;
-      percentage_change: number | null;
-      repeatable: boolean;
-      quiet_hours_start: string | null;
-      quiet_hours_end: string | null;
-      watch_token_address: string;
-      watch_chain: string;
-    } = {
+    const insertSet: IAssetAlertInsertSet = {
       user_id: input.userId,
       favorite_id: null,
       target_to_amount: null,
@@ -67,34 +108,14 @@ export class AssetAlertsService {
       watch_chain: input.chain,
     };
 
-    const result = await this.databaseService
+    const result: IPriceAlertDbRecord = await this.databaseService
       .getConnection()
       .insertInto('price_alerts')
-      .values(insertValues as any)
-      .returning([
-        'id',
-        'user_id as userId',
-        'favorite_id as favoriteId',
-        'target_to_amount as targetToAmount',
-        'status as status',
-        'created_at as createdAt',
-        'updated_at as updatedAt',
-        'last_checked_at as lastCheckedAt',
-        'triggered_at as triggeredAt',
-        'last_observed_net_to_amount as lastObservedNetToAmount',
-        'last_observed_aggregator as lastObservedAggregator',
-        'kind as kind',
-        'direction as direction',
-        'percentage_change as percentageChange',
-        'repeatable as repeatable',
-        'quiet_hours_start as quietHoursStart',
-        'quiet_hours_end as quietHoursEnd',
-        'watch_token_address as watchTokenAddress',
-        'watch_chain as watchChain',
-      ])
+      .values(insertSet)
+      .returningAll()
       .executeTakeFirstOrThrow();
 
-    return this.mapAssetRecord(result as any);
+    return this.mapAssetRecord(result);
   }
 
   public async listActiveAssetAlerts(limit: number): Promise<readonly IPriceAlertWithToken[]> {
@@ -105,28 +126,29 @@ export class AssetAlertsService {
         join.onRef('tokens.address', '=', 'price_alerts.watch_token_address'),
       )
       .select([
-        'price_alerts.id as id',
-        'price_alerts.user_id as userId',
-        'price_alerts.target_to_amount as targetToAmount',
-        'price_alerts.status as status',
-        'price_alerts.created_at as createdAt',
-        'price_alerts.updated_at as updatedAt',
-        'price_alerts.last_checked_at as lastCheckedAt',
-        'price_alerts.triggered_at as triggeredAt',
-        'price_alerts.last_observed_net_to_amount as lastObservedNetToAmount',
-        'price_alerts.last_observed_aggregator as lastObservedAggregator',
-        'price_alerts.kind as kind',
-        'price_alerts.direction as direction',
-        'price_alerts.percentage_change as percentageChange',
-        'price_alerts.repeatable as repeatable',
-        'price_alerts.quiet_hours_start as quietHoursStart',
-        'price_alerts.quiet_hours_end as quietHoursEnd',
-        'price_alerts.watch_token_address as watchTokenAddress',
-        'price_alerts.watch_chain as watchChain',
-        'tokens.symbol as symbol',
-        'tokens.decimals as decimals',
-        'tokens.address as tokenAddress',
-        'tokens.chain as chain',
+        'price_alerts.id',
+        'price_alerts.favorite_id',
+        'price_alerts.user_id',
+        'price_alerts.target_to_amount',
+        'price_alerts.status',
+        'price_alerts.created_at',
+        'price_alerts.updated_at',
+        'price_alerts.last_checked_at',
+        'price_alerts.triggered_at',
+        'price_alerts.last_observed_net_to_amount',
+        'price_alerts.last_observed_aggregator',
+        'price_alerts.kind',
+        'price_alerts.direction',
+        'price_alerts.percentage_change',
+        'price_alerts.repeatable',
+        'price_alerts.quiet_hours_start',
+        'price_alerts.quiet_hours_end',
+        'price_alerts.watch_token_address',
+        'price_alerts.watch_chain',
+        'tokens.symbol',
+        'tokens.decimals',
+        'tokens.address as token_address',
+        'tokens.chain',
       ])
       .where('price_alerts.kind', '=', 'asset')
       .where('price_alerts.status', '=', 'active')
@@ -134,7 +156,8 @@ export class AssetAlertsService {
       .limit(limit)
       .execute();
 
-    return alerts.map((alert) => this.mapAssetWithToken(alert as any));
+    const typedAlerts: readonly IPriceAlertDbWithToken[] = alerts;
+    return typedAlerts.map((alert) => this.mapAssetWithToken(alert));
   }
 
   public async updateAssetAlert(
@@ -144,22 +167,22 @@ export class AssetAlertsService {
       aggregator?: string | null;
     },
   ): Promise<void> {
-    const updateValues: Partial<Record<keyof IDatabase['price_alerts'], unknown>> = {
+    const updateSet: IAssetAlertUpdateSet = {
       updated_at: new Date(),
       last_checked_at: new Date(),
     };
 
     if (input.netToAmount !== undefined) {
-      updateValues.last_observed_net_to_amount = input.netToAmount;
+      updateSet.last_observed_net_to_amount = input.netToAmount;
     }
     if (input.aggregator !== undefined) {
-      updateValues.last_observed_aggregator = input.aggregator;
+      updateSet.last_observed_aggregator = input.aggregator;
     }
 
     await this.databaseService
       .getConnection()
       .updateTable('price_alerts')
-      .set(updateValues as any)
+      .set(updateSet)
       .where('id', '=', alertId)
       .execute();
   }
@@ -181,93 +204,50 @@ export class AssetAlertsService {
         triggered_at: new Date(),
         last_observed_net_to_amount: input.netToAmount,
         last_observed_aggregator: input.aggregator,
-      } as any)
+      })
       .where('id', '=', alertId)
       .execute();
   }
 
-  private mapAssetRecord(record: {
-    id: string;
-    favoriteId: string | null;
-    userId: string;
-    targetToAmount: string | null;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-    lastCheckedAt: Date | null;
-    triggeredAt: Date | null;
-    lastObservedNetToAmount: string | null;
-    lastObservedAggregator: string | null;
-    kind: string;
-    direction: string | null;
-    percentageChange: number | null;
-    repeatable: boolean;
-    quietHoursStart: string | null;
-    quietHoursEnd: string | null;
-    watchTokenAddress: string | null;
-    watchChain: string | null;
-  }): IPriceAlertRecord {
+  private mapAssetRecord(record: IPriceAlertDbRecord): IPriceAlertRecord {
     return {
       id: record.id,
-      favoriteId: record.favoriteId,
-      userId: record.userId,
-      targetToAmount: record.targetToAmount,
-      status: record.status as any,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt,
-      lastCheckedAt: record.lastCheckedAt,
-      triggeredAt: record.triggeredAt,
-      lastObservedNetToAmount: record.lastObservedNetToAmount,
-      lastObservedAggregator: record.lastObservedAggregator,
-      kind: record.kind as any,
+      favoriteId: record.favorite_id,
+      userId: record.user_id,
+      targetToAmount: record.target_to_amount,
+      status: record.status as PriceAlertStatus,
+      createdAt: record.created_at,
+      updatedAt: record.updated_at,
+      lastCheckedAt: record.last_checked_at,
+      triggeredAt: record.triggered_at,
+      lastObservedNetToAmount: record.last_observed_net_to_amount,
+      lastObservedAggregator: record.last_observed_aggregator,
+      kind: record.kind as AlertKind,
       direction: record.direction as AlertDirection,
-      percentageChange: record.percentageChange,
+      percentageChange: record.percentage_change,
       repeatable: record.repeatable,
-      quietHoursStart: record.quietHoursStart,
-      quietHoursEnd: record.quietHoursEnd,
-      watchTokenAddress: record.watchTokenAddress,
-      watchChain: record.watchChain as any,
+      quietHoursStart: record.quiet_hours_start,
+      quietHoursEnd: record.quiet_hours_end,
+      watchTokenAddress: record.watch_token_address,
+      watchChain: record.watch_chain as ChainType | null,
     };
   }
 
-  private mapAssetWithToken(alert: {
-    id: string;
-    userId: string;
-    targetToAmount: string | null;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-    lastCheckedAt: Date | null;
-    triggeredAt: Date | null;
-    lastObservedNetToAmount: string | null;
-    lastObservedAggregator: string | null;
-    kind: string;
-    direction: string | null;
-    percentageChange: number | null;
-    repeatable: boolean;
-    quietHoursStart: string | null;
-    quietHoursEnd: string | null;
-    watchTokenAddress: string;
-    watchChain: string | null;
-    symbol: string;
-    decimals: number;
-    tokenAddress: string;
-    chain: string;
-  }): IPriceAlertWithToken {
+  private mapAssetWithToken(alert: IPriceAlertDbWithToken): IPriceAlertWithToken {
     return {
       id: alert.id,
-      userId: alert.userId,
+      userId: alert.user_id,
       status: alert.status,
-      targetToAmount: alert.targetToAmount,
+      targetToAmount: alert.target_to_amount,
       kind: alert.kind,
       direction: alert.direction,
-      percentageChange: alert.percentageChange,
+      percentageChange: alert.percentage_change,
       repeatable: alert.repeatable,
-      quietHoursStart: alert.quietHoursStart,
-      quietHoursEnd: alert.quietHoursEnd,
+      quietHoursStart: alert.quiet_hours_start,
+      quietHoursEnd: alert.quiet_hours_end,
       symbol: alert.symbol,
       decimals: alert.decimals,
-      tokenAddress: alert.tokenAddress,
+      tokenAddress: alert.token_address,
       chain: alert.chain,
     };
   }
@@ -277,30 +257,43 @@ export class AssetAlertsService {
       return false;
     }
 
-    const now = new Date();
-    const currentHour = now.getHours();
-    const startParts = quietHoursStart.split(':');
-    const endParts = quietHoursEnd.split(':');
+    const start = this.parseTimeParts(quietHoursStart);
+    const end = this.parseTimeParts(quietHoursEnd);
 
-    if (startParts.length !== 2 || endParts.length !== 2) {
+    if (!start || !end) {
       return false;
     }
 
-    const startHour = Number.parseInt(startParts[0] ?? '0', 10);
-    const endHour = Number.parseInt(endParts[0] ?? '0', 10);
-    const startMin = Number.parseInt(startParts[1] ?? '0', 10);
-    const endMin = Number.parseInt(endParts[1] ?? '0', 10);
+    const currentHour = new Date().getHours();
 
-    if (currentHour < startHour || currentHour > endHour) {
+    return this.isHourInRange(currentHour, start, end);
+  }
+
+  private parseTimeParts(time: string): { hour: number; minute: number } | null {
+    const parts = time.split(':');
+    const EXPECTED_PARTS = 2;
+
+    if (parts.length !== EXPECTED_PARTS) {
+      return null;
+    }
+
+    return {
+      hour: Number.parseInt(parts[0] ?? '0', 10),
+      minute: Number.parseInt(parts[1] ?? '0', 10),
+    };
+  }
+
+  private isHourInRange(
+    currentHour: number,
+    start: { hour: number; minute: number },
+    end: { hour: number; minute: number },
+  ): boolean {
+    if (currentHour < start.hour || currentHour > end.hour) {
       return false;
     }
 
-    if (currentHour === startHour && currentHour === endHour) {
-      if (startMin > endMin) {
-        return false;
-      }
-
-      return true;
+    if (currentHour === start.hour && currentHour === end.hour) {
+      return start.minute <= end.minute;
     }
 
     return false;

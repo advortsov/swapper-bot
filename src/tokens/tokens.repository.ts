@@ -66,15 +66,7 @@ export class TokensRepository {
   }
 
   public async findByAddress(address: string, chain: ChainType): Promise<ITokenRecord | null> {
-    const token = await this.databaseService
-      .getConnection()
-      .selectFrom('tokens')
-      .select(['address', 'symbol', 'decimals', 'name', 'chain'])
-      .where('address', '=', address)
-      .where('chain', '=', chain)
-      .executeTakeFirst();
-
-    return token ? this.mapRecord(token) : null;
+    return this.findByAddressAndChain(address, chain);
   }
 
   public async findByAddressAndChain(

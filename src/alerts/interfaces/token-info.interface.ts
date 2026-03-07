@@ -1,10 +1,3 @@
-export interface ITokenInfo {
-  symbol: string;
-  decimals: number;
-  address: string;
-  chain: string;
-}
-
 export interface IPriceAlertWithToken {
   id: string;
   userId: string;

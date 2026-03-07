@@ -11,6 +11,7 @@ const SOLANA_CHAIN_ID = 'solana:mainnet';
 const SOLANA_NATIVE_TOKEN_ADDRESS = 'So11111111111111111111111111111111111111112';
 const SOLANA_NATIVE_TOKEN_DECIMALS = 9;
 const DEFAULT_SIGNATURE_FEE_LAMPORTS = 5_000n;
+const ZERO_BALANCE = 0n;
 
 @Injectable()
 export class SolanaChain implements IChain {
@@ -141,24 +142,23 @@ export class SolanaChain implements IChain {
     }
 
     try {
-      const accounts = await this.connection.getTokenAccountsByOwner(
-        new PublicKey(walletAddress),
-        { mint: new PublicKey(tokenAddress) },
-      );
+      const accounts = await this.connection.getTokenAccountsByOwner(new PublicKey(walletAddress), {
+        mint: new PublicKey(tokenAddress),
+      });
 
       if (accounts.value.length === 0) {
-        return 0n;
+        return ZERO_BALANCE;
       }
 
       const account = accounts.value[0];
       if (!account) {
-        return 0n;
+        return ZERO_BALANCE;
       }
 
       const accountData = account.account.data;
 
-      if (!accountData || !('parsed' in accountData)) {
-        return 0n;
+      if (!('parsed' in accountData)) {
+        return ZERO_BALANCE;
       }
 
       const parsed = accountData.parsed as { info: { tokenAmount: { amount: string } } };

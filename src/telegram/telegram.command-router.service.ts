@@ -19,12 +19,16 @@ export class TelegramCommandRouterService {
   @Inject()
   private readonly transactionTrackerService!: TransactionTrackerService;
 
+  @Inject()
+  private readonly portfolioBalanceService!: TelegramPortfolioBalanceService;
+
+  @Inject()
+  private readonly templatesService!: TelegramTradeTemplatesService;
+
   public constructor(
     private readonly settingsHandler: TelegramSettingsHandler,
     private readonly tradingService: TelegramTradingService,
     private readonly portfolioService: TelegramPortfolioService,
-    private readonly portfolioBalanceService: TelegramPortfolioBalanceService,
-    private readonly templatesService: TelegramTradeTemplatesService,
     private readonly connectionsService: TelegramConnectionsService,
   ) {}
 

@@ -108,14 +108,17 @@ const priceRequest: IPriceRequest = {
 };
 
 function createFakeChain(name: ChainType): IChain {
+  const ZERO_BALANCE = 0n;
   return {
     name,
     chainId: 1,
-    getGasPrice: async () => 0n,
+    getGasPrice: async () => ZERO_BALANCE,
     getTokenDecimals: async () => 18,
     validateAddress: () => true,
     buildExplorerUrl: (txHash: string) => txHash,
     getTransactionReceipt: async () => null,
+    getBalance: async () => ZERO_BALANCE,
+    getTokenBalance: async () => ZERO_BALANCE,
   };
 }
 

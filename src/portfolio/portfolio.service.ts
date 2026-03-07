@@ -1,13 +1,17 @@
 import { Injectable, Inject } from '@nestjs/common';
-import type { ChainType } from '../chains/interfaces/chain.interface';
+
 import type { IPortfolioAsset, IPortfolioSummary } from './interfaces/portfolio.interface';
 import { TokenBalanceReaderService } from './token-balance-reader.service';
-import { CHAINS_TOKEN, ChainsModule } from '../chains/chains.module';
+import { CHAINS_TOKEN } from '../chains/chains.module';
+import type { ChainType } from '../chains/interfaces/chain.interface';
 import { TokensRepository } from '../tokens/tokens.repository';
 import { WalletConnectService } from '../wallet-connect/wallet-connect.service';
 
 const PORTFOLIO_MAX_ASSETS = 20;
 const DEFAULT_ESTIMATED_USD = null;
+const BALANCE_BASE = 10;
+const MIN_DISPLAY_BALANCE = 0.001;
+const BALANCE_DECIMAL_PLACES = 4;
 
 @Injectable()
 export class PortfolioService {
@@ -30,10 +34,7 @@ export class PortfolioService {
         continue;
       }
 
-      const chainAssets = await this.getAssetsForChain(
-        chain,
-        session.address,
-      );
+      const chainAssets = await this.getAssetsForChain(chain, session.address);
 
       assets.push(...chainAssets);
     }
@@ -53,9 +54,7 @@ export class PortfolioService {
     const assets: IPortfolioAsset[] = [];
 
     if (chain === 'solana') {
-      const nativeBalance = await this.tokenBalanceReader.getSolanaNativeBalance(
-        walletAddress,
-      );
+      const nativeBalance = await this.tokenBalanceReader.getSolanaNativeBalance(walletAddress);
 
       const nativeDecimals = 9;
 
@@ -72,10 +71,7 @@ export class PortfolioService {
       return assets;
     }
 
-    const nativeBalance = await this.tokenBalanceReader.getEvmNativeBalance(
-      walletAddress,
-      chain,
-    );
+    const nativeBalance = await this.tokenBalanceReader.getEvmNativeBalance(walletAddress, chain);
 
     const nativeDecimals = 18;
     const nativeSymbol = this.getNativeSymbol(chain);
@@ -118,13 +114,13 @@ export class PortfolioService {
   }
 
   private formatBalance(balanceBaseUnits: string, decimals: number): string {
-    const balance = Number.parseFloat(balanceBaseUnits) / 10 ** decimals;
+    const balance = Number.parseFloat(balanceBaseUnits) / BALANCE_BASE ** decimals;
 
-    if (balance < 0.001) {
+    if (balance < MIN_DISPLAY_BALANCE) {
       return balance.toExponential(2);
     }
 
-    return balance.toFixed(4);
+    return balance.toFixed(BALANCE_DECIMAL_PLACES);
   }
 
   private calculateTotalUsd(assets: readonly IPortfolioAsset[]): string {

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { Context, Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 
@@ -10,12 +10,14 @@ import { TelegramTradeTemplatesService } from './telegram.trade-templates.servic
 
 @Injectable()
 export class TelegramUpdateHandler {
+  @Inject()
+  private readonly startHelpService!: TelegramStartHelpService;
+
   public constructor(
     private readonly settingsHandler: TelegramSettingsHandler,
     private readonly commandRouter: TelegramCommandRouterService,
     private readonly callbackRouter: TelegramCallbackRouterService,
     private readonly templatesService: TelegramTradeTemplatesService,
-    private readonly startHelpService: TelegramStartHelpService,
   ) {}
 
   public register(bot: Telegraf): void {

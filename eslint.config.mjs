@@ -5,7 +5,6 @@ import importPlugin from 'eslint-plugin-import';
 import promisePlugin from 'eslint-plugin-promise';
 import sonarjs from 'eslint-plugin-sonarjs';
 import unusedImports from 'eslint-plugin-unused-imports';
-import boundaries from 'eslint-plugin-boundaries';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -44,7 +43,6 @@ export default tseslint.config(
       'unused-imports': unusedImports,
       promise: promisePlugin,
       sonarjs,
-      // boundaries,
     },
     rules: {
       // ----- TYPESCRIPT (СТРОГО) -----
@@ -133,7 +131,7 @@ export default tseslint.config(
       ],
 
       // ----- SONARJS -----
-      'sonarjs/no-identical-functions': ['error',  3 ],
+      'sonarjs/no-identical-functions': ['error', 3],
       'sonarjs/cognitive-complexity': ['error', 15],
       'sonarjs/no-duplicate-string': ['error', { threshold: 5 }],
       'sonarjs/no-identical-conditions': 'error',
@@ -217,7 +215,6 @@ export default tseslint.config(
       'sonarjs/cognitive-complexity': 'off',
       'import/no-relative-parent-imports': 'off',
       'import/no-cycle': 'off',
-      'boundaries/element-types': 'off',
     },
   },
 
@@ -228,7 +225,6 @@ export default tseslint.config(
       'no-magic-numbers': 'off',
       'max-lines': 'off',
       'sonarjs/no-duplicate-string': 'off',
-      'boundaries/element-types': 'off',
     },
   },
 );

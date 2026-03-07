@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { DatabaseService } from '../database/database.service';
-import type { IDatabase } from '../database/database.types';
 import type {
+  AlertKind,
   ICreatePriceAlertInput,
   IPriceAlertRecord,
   IPriceAlertWithFavorite,
@@ -11,6 +11,69 @@ import type {
 } from './interfaces/price-alert.interface';
 
 type AlertDirection = 'up' | 'down' | 'cross' | null;
+
+interface IPriceAlertDbRecord {
+  id: string;
+  favorite_id: string | null;
+  user_id: string;
+  target_to_amount: string | null;
+  status: string;
+  created_at: Date;
+  updated_at: Date;
+  last_checked_at: Date | null;
+  triggered_at: Date | null;
+  last_observed_net_to_amount: string | null;
+  last_observed_aggregator: string | null;
+  kind: string;
+  direction: string | null;
+  percentage_change: number | null;
+  repeatable: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  watch_token_address: string | null;
+  watch_chain: string | null;
+}
+
+interface IPriceAlertDbWithFavorite extends IPriceAlertDbRecord {
+  chain: string;
+  amount: string;
+  from_token_address: string;
+  to_token_address: string;
+  from_token_symbol: string;
+  to_token_symbol: string;
+}
+
+interface IAlertUpdateSet {
+  target_to_amount: string | null;
+  kind: string;
+  updated_at: Date;
+  last_checked_at: Date | null;
+  triggered_at: Date | null;
+  last_observed_net_to_amount: string | null;
+  last_observed_aggregator: string | null;
+  direction?: 'up' | 'down' | 'cross' | null;
+  percentage_change?: number;
+  repeatable?: boolean;
+  quiet_hours_start?: string;
+  quiet_hours_end?: string;
+  watch_token_address?: string;
+  watch_chain?: string;
+}
+
+interface IAlertInsertSet {
+  favorite_id: string | null;
+  user_id: string;
+  target_to_amount: string | null;
+  status: string;
+  kind: string;
+  direction: string | null;
+  percentage_change: number | null;
+  repeatable: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  watch_token_address: string | null;
+  watch_chain: string | null;
+}
 
 @Injectable()
 export class PriceAlertsRepository {
@@ -26,72 +89,10 @@ export class PriceAlertsRepository {
       .executeTakeFirst();
 
     if (existing) {
-      const updateValues: Partial<Record<keyof IDatabase['price_alerts'], unknown>> = {
-        target_to_amount: input.targetToAmount,
-        kind: input.kind,
-        updated_at: new Date(),
-        last_checked_at: null,
-        triggered_at: null,
-        last_observed_net_to_amount: null,
-        last_observed_aggregator: null,
-      };
-
-      if (input.direction !== undefined) {
-        updateValues.direction = input.direction;
-      }
-      if (input.percentageChange !== undefined) {
-        updateValues.percentage_change = input.percentageChange;
-      }
-      if (input.repeatable !== undefined) {
-        updateValues.repeatable = input.repeatable;
-      }
-      if (input.quietHoursStart !== undefined) {
-        updateValues.quiet_hours_start = input.quietHoursStart;
-      }
-      if (input.quietHoursEnd !== undefined) {
-        updateValues.quiet_hours_end = input.quietHoursEnd;
-      }
-      if (input.watchTokenAddress !== undefined) {
-        updateValues.watch_token_address = input.watchTokenAddress;
-      }
-      if (input.watchChain !== undefined) {
-        updateValues.watch_chain = input.watchChain;
-      }
-
-      const updated = await this.databaseService
-        .getConnection()
-        .updateTable('price_alerts')
-        .set(updateValues as any)
-        .where('id', '=', existing.id)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      return this.mapRecord(updated);
+      return this.updateExistingAlert(existing.id, input);
     }
 
-    const insertValues = {
-      favorite_id: input.favoriteId ?? null,
-      user_id: input.userId,
-      target_to_amount: input.targetToAmount ?? null,
-      status: 'active',
-      kind: input.kind,
-      direction: input.direction ?? null,
-      percentage_change: input.percentageChange ?? null,
-      repeatable: input.repeatable ?? false,
-      quiet_hours_start: input.quietHoursStart ?? null,
-      quiet_hours_end: input.quietHoursEnd ?? null,
-      watch_token_address: input.watchTokenAddress ?? null,
-      watch_chain: input.watchChain ?? null,
-    };
-
-    const created = await this.databaseService
-      .getConnection()
-      .insertInto('price_alerts')
-      .values(insertValues as any)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    return this.mapRecord(created);
+    return this.insertNewAlert(input);
   }
 
   public async countActiveByUser(userId: string): Promise<number> {
@@ -107,7 +108,7 @@ export class PriceAlertsRepository {
   }
 
   public async findActiveByFavorite(favoriteId: string): Promise<IPriceAlertRecord | null> {
-    const alert = await this.databaseService
+    const alert: IPriceAlertDbRecord | undefined = await this.databaseService
       .getConnection()
       .selectFrom('price_alerts')
       .selectAll()
@@ -119,7 +120,7 @@ export class PriceAlertsRepository {
   }
 
   public async findActiveByAlertId(alertId: string): Promise<IPriceAlertRecord | null> {
-    const alert = await this.databaseService
+    const alert: IPriceAlertDbRecord | undefined = await this.databaseService
       .getConnection()
       .selectFrom('price_alerts')
       .selectAll()
@@ -146,31 +147,31 @@ export class PriceAlertsRepository {
           .onRef('to_token.chain', '=', 'favorite_pairs.to_token_chain'),
       )
       .select([
-        'price_alerts.id as id',
-        'price_alerts.favorite_id as favoriteId',
-        'price_alerts.user_id as userId',
-        'price_alerts.target_to_amount as targetToAmount',
-        'price_alerts.status as status',
-        'price_alerts.created_at as createdAt',
-        'price_alerts.updated_at as updatedAt',
-        'price_alerts.last_checked_at as lastCheckedAt',
-        'price_alerts.triggered_at as triggeredAt',
-        'price_alerts.last_observed_net_to_amount as lastObservedNetToAmount',
-        'price_alerts.last_observed_aggregator as lastObservedAggregator',
-        'price_alerts.kind as kind',
-        'price_alerts.direction as direction',
-        'price_alerts.percentage_change as percentageChange',
-        'price_alerts.repeatable as repeatable',
-        'price_alerts.quiet_hours_start as quietHoursStart',
-        'price_alerts.quiet_hours_end as quietHoursEnd',
-        'price_alerts.watch_token_address as watchTokenAddress',
-        'price_alerts.watch_chain as watchChain',
-        'favorite_pairs.chain as chain',
-        'favorite_pairs.amount as amount',
-        'favorite_pairs.from_token_address as fromTokenAddress',
-        'favorite_pairs.to_token_address as toTokenAddress',
-        'from_token.symbol as fromTokenSymbol',
-        'to_token.symbol as toTokenSymbol',
+        'price_alerts.id',
+        'price_alerts.favorite_id',
+        'price_alerts.user_id',
+        'price_alerts.target_to_amount',
+        'price_alerts.status',
+        'price_alerts.created_at',
+        'price_alerts.updated_at',
+        'price_alerts.last_checked_at',
+        'price_alerts.triggered_at',
+        'price_alerts.last_observed_net_to_amount',
+        'price_alerts.last_observed_aggregator',
+        'price_alerts.kind',
+        'price_alerts.direction',
+        'price_alerts.percentage_change',
+        'price_alerts.repeatable',
+        'price_alerts.quiet_hours_start',
+        'price_alerts.quiet_hours_end',
+        'price_alerts.watch_token_address',
+        'price_alerts.watch_chain',
+        'favorite_pairs.chain',
+        'favorite_pairs.amount',
+        'favorite_pairs.from_token_address',
+        'favorite_pairs.to_token_address',
+        'from_token.symbol as from_token_symbol',
+        'to_token.symbol as to_token_symbol',
       ])
       .where('price_alerts.status', '=', 'active')
       .where('price_alerts.favorite_id', 'is not', null)
@@ -193,7 +194,7 @@ export class PriceAlertsRepository {
         last_checked_at: new Date(),
         last_observed_net_to_amount: input.netToAmount,
         last_observed_aggregator: input.aggregator,
-      } as any)
+      })
       .where('id', '=', alertId)
       .execute();
   }
@@ -212,7 +213,7 @@ export class PriceAlertsRepository {
         triggered_at: new Date(),
         last_observed_net_to_amount: input.netToAmount,
         last_observed_aggregator: input.aggregator,
-      } as any)
+      })
       .where('id', '=', alertId)
       .execute();
   }
@@ -224,7 +225,7 @@ export class PriceAlertsRepository {
       .set({
         status: 'cancelled',
         updated_at: new Date(),
-      } as any)
+      })
       .where('id', '=', alertId)
       .where('user_id', '=', userId)
       .where('status', '=', 'active')
@@ -234,7 +235,77 @@ export class PriceAlertsRepository {
   }
 
   public async createRepeatableAlert(input: ICreatePriceAlertInput): Promise<IPriceAlertRecord> {
-    const insertValues = {
+    return this.insertNewAlert(input);
+  }
+
+  private async updateExistingAlert(
+    existingId: string,
+    input: ICreatePriceAlertInput,
+  ): Promise<IPriceAlertRecord> {
+    const updateSet = this.buildUpdateSet(input);
+
+    const updated: IPriceAlertDbRecord = await this.databaseService
+      .getConnection()
+      .updateTable('price_alerts')
+      .set(updateSet)
+      .where('id', '=', existingId)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapRecord(updated);
+  }
+
+  private async insertNewAlert(input: ICreatePriceAlertInput): Promise<IPriceAlertRecord> {
+    const insertSet = this.buildInsertSet(input);
+
+    const created: IPriceAlertDbRecord = await this.databaseService
+      .getConnection()
+      .insertInto('price_alerts')
+      .values(insertSet)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    return this.mapRecord(created);
+  }
+
+  private buildUpdateSet(input: ICreatePriceAlertInput): IAlertUpdateSet {
+    const updateSet: IAlertUpdateSet = {
+      target_to_amount: input.targetToAmount,
+      kind: input.kind,
+      updated_at: new Date(),
+      last_checked_at: null,
+      triggered_at: null,
+      last_observed_net_to_amount: null,
+      last_observed_aggregator: null,
+    };
+
+    if (input.direction !== undefined) {
+      updateSet.direction = input.direction;
+    }
+    if (input.percentageChange !== undefined) {
+      updateSet.percentage_change = input.percentageChange;
+    }
+    if (input.repeatable !== undefined) {
+      updateSet.repeatable = input.repeatable;
+    }
+    if (input.quietHoursStart !== undefined) {
+      updateSet.quiet_hours_start = input.quietHoursStart;
+    }
+    if (input.quietHoursEnd !== undefined) {
+      updateSet.quiet_hours_end = input.quietHoursEnd;
+    }
+    if (input.watchTokenAddress !== undefined) {
+      updateSet.watch_token_address = input.watchTokenAddress;
+    }
+    if (input.watchChain !== undefined) {
+      updateSet.watch_chain = input.watchChain;
+    }
+
+    return updateSet;
+  }
+
+  private buildInsertSet(input: ICreatePriceAlertInput): IAlertInsertSet {
+    const insertSet: IAlertInsertSet = {
       favorite_id: input.favoriteId ?? null,
       user_id: input.userId,
       target_to_amount: input.targetToAmount ?? null,
@@ -249,37 +320,10 @@ export class PriceAlertsRepository {
       watch_chain: input.watchChain ?? null,
     };
 
-    const created = await this.databaseService
-      .getConnection()
-      .insertInto('price_alerts')
-      .values(insertValues as any)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    return this.mapRecord(created);
+    return insertSet;
   }
 
-  private mapRecord(record: {
-    id: string;
-    favorite_id: string;
-    user_id: string;
-    target_to_amount: string;
-    status: string;
-    created_at: Date;
-    updated_at: Date;
-    last_checked_at: Date | null;
-    triggered_at: Date | null;
-    last_observed_net_to_amount: string | null;
-    last_observed_aggregator: string | null;
-    kind: string;
-    direction: string | null;
-    percentage_change: number | null;
-    repeatable: boolean;
-    quiet_hours_start: string | null;
-    quiet_hours_end: string | null;
-    watch_token_address: string | null;
-    watch_chain: string | null;
-  }): IPriceAlertRecord {
+  private mapRecord(record: IPriceAlertDbRecord): IPriceAlertRecord {
     return {
       id: record.id,
       favoriteId: record.favorite_id,
@@ -292,70 +336,44 @@ export class PriceAlertsRepository {
       triggeredAt: record.triggered_at,
       lastObservedNetToAmount: record.last_observed_net_to_amount,
       lastObservedAggregator: record.last_observed_aggregator,
-      kind: record.kind as any,
+      kind: record.kind as AlertKind,
       direction: record.direction as AlertDirection,
       percentageChange: record.percentage_change,
       repeatable: record.repeatable,
       quietHoursStart: record.quiet_hours_start,
       quietHoursEnd: record.quiet_hours_end,
       watchTokenAddress: record.watch_token_address,
-      watchChain: record.watch_chain as any,
+      watchChain: record.watch_chain as ChainType | null,
     };
   }
 
-  private mapAlertWithFavorite(alert: {
-    id: string;
-    favoriteId: string;
-    userId: string;
-    targetToAmount: string;
-    status: string;
-    createdAt: Date;
-    updatedAt: Date;
-    lastCheckedAt: Date | null;
-    triggeredAt: Date | null;
-    lastObservedNetToAmount: string | null;
-    lastObservedAggregator: string | null;
-    kind: string;
-    direction: string | null;
-    percentageChange: number | null;
-    repeatable: boolean;
-    quietHoursStart: string | null;
-    quietHoursEnd: string | null;
-    watchTokenAddress: string | null;
-    watchChain: string | null;
-    chain: string;
-    amount: string;
-    fromTokenAddress: string;
-    toTokenAddress: string;
-    fromTokenSymbol: string;
-    toTokenSymbol: string;
-  }): IPriceAlertWithFavorite {
+  private mapAlertWithFavorite(alert: IPriceAlertDbWithFavorite): IPriceAlertWithFavorite {
     return {
       id: alert.id,
-      favoriteId: alert.favoriteId,
-      userId: alert.userId,
-      targetToAmount: alert.targetToAmount,
+      favoriteId: alert.favorite_id,
+      userId: alert.user_id,
+      targetToAmount: alert.target_to_amount,
       status: alert.status as PriceAlertStatus,
-      createdAt: alert.createdAt,
-      updatedAt: alert.updatedAt,
-      lastCheckedAt: alert.lastCheckedAt,
-      triggeredAt: alert.triggeredAt,
-      lastObservedNetToAmount: alert.lastObservedNetToAmount,
-      lastObservedAggregator: alert.lastObservedAggregator,
-      kind: alert.kind as any,
+      createdAt: alert.created_at,
+      updatedAt: alert.updated_at,
+      lastCheckedAt: alert.last_checked_at,
+      triggeredAt: alert.triggered_at,
+      lastObservedNetToAmount: alert.last_observed_net_to_amount,
+      lastObservedAggregator: alert.last_observed_aggregator,
+      kind: alert.kind as AlertKind,
       direction: alert.direction as AlertDirection,
-      percentageChange: alert.percentageChange,
+      percentageChange: alert.percentage_change,
       repeatable: alert.repeatable,
-      quietHoursStart: alert.quietHoursStart,
-      quietHoursEnd: alert.quietHoursEnd,
-      watchTokenAddress: alert.watchTokenAddress,
-      watchChain: alert.watchChain as any,
+      quietHoursStart: alert.quiet_hours_start,
+      quietHoursEnd: alert.quiet_hours_end,
+      watchTokenAddress: alert.watch_token_address,
+      watchChain: alert.watch_chain as ChainType | null,
       chain: alert.chain as ChainType,
       amount: alert.amount,
-      fromTokenAddress: alert.fromTokenAddress,
-      toTokenAddress: alert.toTokenAddress,
-      fromTokenSymbol: alert.fromTokenSymbol,
-      toTokenSymbol: alert.toTokenSymbol,
+      fromTokenAddress: alert.from_token_address,
+      toTokenAddress: alert.to_token_address,
+      fromTokenSymbol: alert.from_token_symbol,
+      toTokenSymbol: alert.to_token_symbol,
     };
   }
 }

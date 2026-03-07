@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
-import { TokenBalanceReaderService } from './token-balance-reader.service';
 import { PortfolioService } from './portfolio.service';
+import { TokenBalanceReaderService } from './token-balance-reader.service';
 
 @Global()
 @Module({

@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
-
 import type { Context } from 'telegraf';
 
+import type { ChainType } from '../chains/interfaces/chain.interface';
+import { TokensService } from '../tokens/tokens.service';
 import { TradePresetsService } from '../trade-presets/trade-presets.service';
 import { WalletConnectSessionStore } from '../wallet-connect/wallet-connect.session-store';
 import { escapeHtml } from '../wallet-connect/wallet-connect.utils';
-import { TokensService } from '../tokens/tokens.service';
 
 const TEMPLATE_ADD_PREFIX = 'tpl:add:';
 const TEMPLATE_DELETE_PREFIX = 'tpl:del:';
@@ -70,7 +70,7 @@ export class TelegramTradeTemplatesService {
       const preset = await this.tradePresetsService.createPreset({
         userId,
         label: this.generateLabel(userId),
-        chain: payload.chain as any,
+        chain: payload.chain as ChainType,
         sellTokenAddress: payload.fromTokenAddress,
         buyTokenAddress: payload.toTokenAddress,
         defaultAmount: payload.amount,
@@ -84,11 +84,7 @@ export class TelegramTradeTemplatesService {
     }
   }
 
-  public async handlePresetDelete(
-    context: Context,
-    userId: string,
-    data: string,
-  ): Promise<void> {
+  public async handlePresetDelete(context: Context, userId: string, data: string): Promise<void> {
     const deleted = await this.tradePresetsService.deletePreset(userId, data);
 
     if (deleted) {
@@ -111,18 +107,18 @@ export class TelegramTradeTemplatesService {
     try {
       const fromToken = await this.tokensService.getTokenByAddress(
         payload.fromTokenAddress,
-        payload.chain as any,
+        payload.chain as ChainType,
       );
       const toToken = await this.tokensService.getTokenByAddress(
         payload.toTokenAddress,
-        payload.chain as any,
+        payload.chain as ChainType,
       );
 
       const label = `${fromToken.symbol} → ${toToken.symbol}`;
-      const preset = await this.tradePresetsService.createPreset({
+      await this.tradePresetsService.createPreset({
         userId,
         label,
-        chain: payload.chain as any,
+        chain: payload.chain as ChainType,
         sellTokenAddress: payload.fromTokenAddress,
         buyTokenAddress: payload.toTokenAddress,
         defaultAmount: payload.amount,
@@ -171,7 +167,7 @@ export class TelegramTradeTemplatesService {
     return randomBytes(CALLBACK_TOKEN_BYTES).toString('base64url');
   }
 
-  private generateLabel(userId: string): string {
+  private generateLabel(_userId: string): string {
     return `Пресет ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
   }
 }

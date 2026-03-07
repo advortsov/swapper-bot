@@ -9,9 +9,9 @@ import { TelegramConnectionsReplyService } from './telegram.connections-reply.se
 import { TelegramConnectionsService } from './telegram.connections.service';
 import { TelegramErrorReplyService } from './telegram.error-reply.service';
 import { TelegramPortfolioAlertsService } from './telegram.portfolio-alerts.service';
+import { TelegramPortfolioBalanceService } from './telegram.portfolio-balance.service';
 import { TelegramPortfolioFavoritesService } from './telegram.portfolio-favorites.service';
 import { TelegramPortfolioHistoryService } from './telegram.portfolio-history.service';
-import { TelegramPortfolioBalanceService } from './telegram.portfolio-balance.service';
 import { TelegramPortfolioParserService } from './telegram.portfolio-parser.service';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramQrService } from './telegram.qr.service';

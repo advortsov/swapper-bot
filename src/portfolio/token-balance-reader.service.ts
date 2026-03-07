@@ -1,16 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createPublicClient, http, isAddress } from 'viem';
-import { arbitrum, base, mainnet, optimism } from 'viem/chains';
 import { Connection, PublicKey } from '@solana/web3.js';
+import { createPublicClient, http, isAddress } from 'viem';
 
+import { EVM_CHAINS, EVM_CHAIN_CONFIG, type IEvmChainType } from '../allowance/allowance.constants';
 import type { ChainType } from '../chains/interfaces/chain.interface';
 import { BusinessException } from '../common/exceptions/business.exception';
-import {
-  EVM_CHAINS,
-  EVM_CHAIN_CONFIG,
-  type IEvmChainType,
-} from '../allowance/allowance.constants';
 
 const ERC20_BALANCE_ABI = [
   {
@@ -36,10 +31,7 @@ export class TokenBalanceReaderService {
     );
   }
 
-  public async getEvmNativeBalance(
-    walletAddress: string,
-    chain: ChainType,
-  ): Promise<string> {
+  public async getEvmNativeBalance(walletAddress: string, chain: ChainType): Promise<string> {
     if (!EVM_CHAINS.includes(chain as IEvmChainType)) {
       throw new BusinessException('EVM balance only supported for EVM chains');
     }
@@ -77,7 +69,7 @@ export class TokenBalanceReaderService {
     }
 
     const balance = await client.readContract({
-      address: tokenAddress as `0x${string}`,
+      address: tokenAddress,
       abi: ERC20_BALANCE_ABI,
       functionName: 'balanceOf',
       args: [walletAddress as `0x${string}`],
@@ -91,10 +83,7 @@ export class TokenBalanceReaderService {
     return result.toString();
   }
 
-  public async getSolanaTokenBalance(
-    walletAddress: string,
-    tokenAddress: string,
-  ): Promise<string> {
+  public async getSolanaTokenBalance(walletAddress: string, tokenAddress: string): Promise<string> {
     if (tokenAddress === SOLANA_NATIVE_TOKEN_ADDRESS) {
       return this.getSolanaNativeBalance(walletAddress);
     }
@@ -116,7 +105,7 @@ export class TokenBalanceReaderService {
 
       const accountData = account.account.data;
 
-      if (!accountData || !('parsed' in accountData)) {
+      if (!('parsed' in accountData)) {
         return '0';
       }
 

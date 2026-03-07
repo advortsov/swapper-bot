@@ -30,6 +30,8 @@ describe('TelegramCommandRouterService', () => {
     Object.assign(service, {
       errorReplyService: {} as never,
       transactionTrackerService: {} as never,
+      portfolioBalanceService: {} as never,
+      templatesService: {} as never,
     });
 
     await service.handleText(createContext() as never);
@@ -55,6 +57,8 @@ describe('TelegramCommandRouterService', () => {
       errorReplyService: {
         replyWithError: vi.fn(),
       } as never,
+      portfolioBalanceService: {} as never,
+      templatesService: {} as never,
     });
 
     await service.handleSwap(createContext() as never);

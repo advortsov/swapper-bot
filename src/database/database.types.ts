@@ -98,9 +98,9 @@ export interface IFavoritePairsTable {
 
 export interface IPriceAlertsTable {
   id: Generated<string>;
-  favorite_id: string;
+  favorite_id: string | null;
   user_id: string;
-  target_to_amount: string;
+  target_to_amount: string | null;
   status: string;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;

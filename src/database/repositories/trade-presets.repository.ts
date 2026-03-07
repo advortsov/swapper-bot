@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 
 import type { ChainType } from '../../chains/interfaces/chain.interface';
-import { DatabaseService } from '../database.service';
 import type {
   ICreatePresetInput,
   ITradePresetRecord,
   ITradePresetView,
 } from '../../trade-presets/interfaces/trade-preset.interface';
+import { DatabaseService } from '../database.service';
 
 @Injectable()
 export class TradePresetsRepository {
@@ -43,10 +43,7 @@ export class TradePresetsRepository {
     return this.mapRecord(preset);
   }
 
-  public async findById(
-    id: string,
-    userId: string,
-  ): Promise<ITradePresetView | null> {
+  public async findById(id: string, userId: string): Promise<ITradePresetView | null> {
     const preset = await this.databaseService
       .getConnection()
       .selectFrom('trade_presets')
@@ -123,10 +120,7 @@ export class TradePresetsRepository {
     return Number(result.numDeletedRows) > 0;
   }
 
-  public async findByLabel(
-    userId: string,
-    label: string,
-  ): Promise<ITradePresetRecord | null> {
+  public async findByLabel(userId: string, label: string): Promise<ITradePresetRecord | null> {
     const preset = await this.databaseService
       .getConnection()
       .selectFrom('trade_presets')
