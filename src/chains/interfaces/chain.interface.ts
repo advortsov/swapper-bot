@@ -18,4 +18,6 @@ export interface IChain {
   validateAddress(address: string): boolean;
   buildExplorerUrl(txHash: string): string;
   getTransactionReceipt(txHash: string): Promise<ITransactionReceipt | null>;
+  getBalance(walletAddress: string): Promise<bigint>;
+  getTokenBalance(walletAddress: string, tokenAddress: string): Promise<bigint>;
 }

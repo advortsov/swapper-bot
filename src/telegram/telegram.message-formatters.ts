@@ -14,6 +14,14 @@ export {
   buildTransactionConfirmedMessage,
   buildTransactionFailedMessage,
   buildTransactionStatusMessage,
+  buildPortfolioMessage,
+  buildAlertKindSelectionMessage,
+  buildAlertDirectionSelectionMessage,
+  buildAlertQuietHoursPromptMessage,
+  buildRepeatableToggleMessage,
+  buildAssetAlertCreationMessage,
+  buildAlertPercentagePromptMessage,
+  buildAdvancedAlertCreatedMessage,
   type IFavoriteViewItem,
 } from './telegram.message-formatters.portfolio';
 export {

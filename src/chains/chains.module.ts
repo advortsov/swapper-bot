@@ -12,6 +12,8 @@ import { OptimismModule } from './optimism/optimism.module';
 import { SolanaChain } from './solana/solana.chain';
 import { SolanaModule } from './solana/solana.module';
 
+export { CHAINS_TOKEN } from './chains.constants';
+
 @Module({
   imports: [EthereumModule, ArbitrumModule, BaseModule, OptimismModule, SolanaModule],
   providers: [

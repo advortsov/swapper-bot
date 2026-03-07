@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AssetAlertsService } from './asset-alerts.service';
 import { PriceAlertsService } from './price-alerts.service';
 import { PriceQuoteService } from '../price/price.quote.service';
 import { buildAlertTriggeredMessage } from '../telegram/telegram.message-formatters';
@@ -21,6 +22,7 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
   public constructor(
     private readonly configService: ConfigService,
     private readonly priceAlertsService: PriceAlertsService,
+    private readonly assetAlertsService: AssetAlertsService,
     private readonly priceQuoteService: PriceQuoteService,
   ) {
     this.pollIntervalMs = this.resolvePollIntervalMs();
@@ -53,6 +55,12 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
       for (const alert of alerts) {
         await this.processAlert(alert);
       }
+
+      const assetAlerts = await this.assetAlertsService.listActiveAssetAlerts(ALERT_BATCH_SIZE);
+
+      for (const alert of assetAlerts) {
+        await this.processAssetAlert(alert);
+      }
     } finally {
       this.running = false;
     }
@@ -62,6 +70,15 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
     alert: Awaited<ReturnType<PriceAlertsService['listActiveBatch']>>[number],
   ): Promise<void> {
     try {
+      // Check quiet hours
+      if (
+        alert.quietHoursStart &&
+        alert.quietHoursEnd &&
+        this.priceAlertsService.isInQuietHours(alert.quietHoursStart, alert.quietHoursEnd)
+      ) {
+        return;
+      }
+
       const prepared = await this.priceQuoteService.prepare({
         userId: alert.userId,
         chain: alert.chain,
@@ -73,10 +90,20 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
       });
       const selection = await this.priceQuoteService.fetchQuoteSelection(prepared);
       const response = this.priceQuoteService.buildResponse(prepared, selection);
-      const shouldTrigger = this.priceAlertsService.shouldTriggerOnCrossing(
-        alert,
-        response.toAmount,
-      );
+
+      let shouldTrigger = false;
+
+      // Check based on alert kind
+      if (alert.kind === 'fixed') {
+        shouldTrigger = this.priceAlertsService.shouldTriggerOnCrossing(alert, response.toAmount);
+      } else if (alert.kind === 'percentage' && alert.percentageChange) {
+        shouldTrigger = this.priceAlertsService.shouldTriggerPercentage(alert, response.toAmount);
+      }
+
+      // Check direction alerts
+      if (alert.direction && !shouldTrigger) {
+        shouldTrigger = this.priceAlertsService.shouldTriggerDirection(alert, response.toAmount);
+      }
 
       await this.priceAlertsService.markObserved(alert.id, response.toAmount, response.aggregator);
 
@@ -92,14 +119,43 @@ export class PriceAlertsWorker implements OnModuleInit, OnModuleDestroy {
           amount: alert.amount,
           fromTokenSymbol: alert.fromTokenSymbol,
           toTokenSymbol: alert.toTokenSymbol,
-          targetToAmount: alert.targetToAmount,
+          targetToAmount: alert.targetToAmount ?? 'N/A',
           currentToAmount: response.toAmount,
           aggregator: response.aggregator,
         }),
       );
+
+      // Reset repeatable alert
+      if (alert.repeatable) {
+        await this.priceAlertsService.resetRepeatableAlert(alert.id);
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Alert ${alert.id} check failed: ${message}`);
+    }
+  }
+
+  private async processAssetAlert(
+    alert: Awaited<ReturnType<AssetAlertsService['listActiveAssetAlerts']>>[number],
+  ): Promise<void> {
+    try {
+      // Check quiet hours
+      if (
+        alert.quietHoursStart &&
+        alert.quietHoursEnd &&
+        this.assetAlertsService.isInQuietHours(alert.quietHoursStart, alert.quietHoursEnd)
+      ) {
+        return;
+      }
+
+      // For asset alerts, we need to fetch price somehow
+      // This is a simplified implementation - in production, you'd use a price oracle
+      // For now, we'll skip asset alert processing as it requires price fetching infrastructure
+
+      // TODO: Implement price fetching for asset alerts
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Asset alert ${alert.id} check failed: ${message}`);
     }
   }
 

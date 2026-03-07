@@ -5,6 +5,8 @@ import { TelegramConnectionsService } from './telegram.connections.service';
 import { TelegramErrorReplyService } from './telegram.error-reply.service';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramTradingService } from './telegram.trading.service';
+import { TelegramTradingParserService } from './telegram.trading-parser.service';
+import { TelegramTradeTemplatesService } from './telegram.trade-templates.service';
 
 @Injectable()
 export class TelegramCallbackRouterService {
@@ -13,6 +15,8 @@ export class TelegramCallbackRouterService {
     private readonly portfolioService: TelegramPortfolioService,
     private readonly connectionsService: TelegramConnectionsService,
     private readonly errorReplyService: TelegramErrorReplyService,
+    private readonly templatesService: TelegramTradeTemplatesService,
+    private readonly tradingParserService: TelegramTradingParserService,
   ) {}
 
   public async handleAction(context: Context): Promise<void> {
@@ -50,6 +54,12 @@ export class TelegramCallbackRouterService {
         data,
         this.connectionsService,
       );
+      return;
+    }
+
+    if (this.tradingService.isPresetSaveCallback(data)) {
+      const payload = this.tradingParserService.parsePresetSaveData(data);
+      await this.templatesService.handlePresetSave(context, userId, payload);
       return;
     }
 

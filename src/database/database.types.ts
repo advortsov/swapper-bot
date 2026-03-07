@@ -108,6 +108,14 @@ export interface IPriceAlertsTable {
   triggered_at: Date | null;
   last_observed_net_to_amount: string | null;
   last_observed_aggregator: string | null;
+  kind: string;
+  direction: string | null;
+  percentage_change: number | null;
+  repeatable: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  watch_token_address: string | null;
+  watch_chain: string | null;
 }
 
 export interface ITrackedTransactionsTable {
@@ -125,6 +133,17 @@ export interface ITrackedTransactionsTable {
   error_message: string | null;
 }
 
+export interface ITradePresetsTable {
+  id: Generated<string>;
+  user_id: string;
+  label: string;
+  chain: string;
+  sell_token_address: string;
+  buy_token_address: string;
+  default_amount: string | null;
+  created_at: Generated<Date>;
+}
+
 export interface IDatabase {
   users: IUsersTable;
   tokens: ITokensTable;
@@ -135,4 +154,5 @@ export interface IDatabase {
   favorite_pairs: IFavoritePairsTable;
   price_alerts: IPriceAlertsTable;
   tracked_transactions: ITrackedTransactionsTable;
+  trade_presets: ITradePresetsTable;
 }

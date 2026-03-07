@@ -95,7 +95,7 @@ export interface IWalletConnectionStatus {
 export interface IPendingTelegramAction {
   token: string;
   userId: string;
-  kind: 'favorite' | 'alert-threshold' | 'approve';
+  kind: 'favorite' | 'alert-threshold' | 'approve' | 'preset-add';
   payload: Record<string, unknown>;
   createdAt: number;
   expiresAt: number;

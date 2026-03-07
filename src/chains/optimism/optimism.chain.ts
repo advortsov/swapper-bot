@@ -19,6 +19,16 @@ const ERC20_DECIMALS_ABI = [
   },
 ] as const;
 
+const ERC20_BALANCE_ABI = [
+  {
+    inputs: [{ name: 'account', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
 @Injectable()
 export class OptimismChain implements IChain {
   public readonly chainId: number = optimism.id;
@@ -85,5 +95,28 @@ export class OptimismChain implements IChain {
     } catch {
       return null;
     }
+  }
+
+  public async getBalance(walletAddress: string): Promise<bigint> {
+    return this.client.getBalance({
+      address: walletAddress as `0x${string}`,
+    });
+  }
+
+  public async getTokenBalance(walletAddress: string, tokenAddress: string): Promise<bigint> {
+    if (tokenAddress.toLowerCase() === NATIVE_ETH_ADDRESS.toLowerCase()) {
+      return this.getBalance(walletAddress);
+    }
+
+    if (!isAddress(tokenAddress, { strict: false })) {
+      throw new BusinessException(`Invalid token address: ${tokenAddress}`);
+    }
+
+    return this.client.readContract({
+      address: tokenAddress as `0x${string}`,
+      abi: ERC20_BALANCE_ABI,
+      functionName: 'balanceOf',
+      args: [walletAddress as `0x${string}`],
+    });
   }
 }

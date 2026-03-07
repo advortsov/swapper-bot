@@ -74,10 +74,31 @@ export class TokensRepository {
       .where('chain', '=', chain)
       .executeTakeFirst();
 
-    if (!token) {
-      return null;
-    }
+    return token ? this.mapRecord(token) : null;
+  }
 
+  public async findByAddressAndChain(
+    address: string,
+    chain: ChainType,
+  ): Promise<ITokenRecord | null> {
+    const token = await this.databaseService
+      .getConnection()
+      .selectFrom('tokens')
+      .select(['address', 'symbol', 'decimals', 'name', 'chain'])
+      .where('address', '=', address)
+      .where('chain', '=', chain)
+      .executeTakeFirst();
+
+    return token ? this.mapRecord(token) : null;
+  }
+
+  private mapRecord(token: {
+    address: string;
+    symbol: string;
+    decimals: number;
+    name: string;
+    chain: string;
+  }): ITokenRecord {
     return {
       address: token.address,
       symbol: token.symbol,

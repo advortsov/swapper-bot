@@ -23,11 +23,19 @@ const APPROVE_CHAIN_MATCH_INDEX = 3;
 const SWAP_CALLBACK_PREFIX = 'sw:';
 const APPROVE_CALLBACK_PREFIX = 'apr:';
 const RISK_CALLBACK_PREFIX = 'rsk:';
+const PRESET_CALLBACK_PREFIX = 'pst:';
 
 export interface IApproveCallbackPayload {
   actionToken: string;
   aggregatorName: string;
   mode: ApprovalMode;
+}
+
+export interface IPresetSavePayload {
+  chain: ChainType;
+  amount: string;
+  fromTokenAddress: string;
+  toTokenAddress: string;
 }
 
 @Injectable()
@@ -140,6 +148,31 @@ export class TelegramTradingParserService {
 
   public parseRiskConfirmToken(data: string): string {
     return data.slice(RISK_CALLBACK_PREFIX.length);
+  }
+
+  public isPresetSaveCallback(data: string): boolean {
+    return data.startsWith(PRESET_CALLBACK_PREFIX);
+  }
+
+  public buildPresetSaveCallbackData(payload: IPresetSavePayload): string {
+    const data = `${payload.chain}|${payload.amount}|${payload.fromTokenAddress}|${payload.toTokenAddress}`;
+    return `${PRESET_CALLBACK_PREFIX}${data}`;
+  }
+
+  public parsePresetSaveData(data: string): IPresetSavePayload {
+    const payload = data.slice(PRESET_CALLBACK_PREFIX.length);
+    const [chain, amount, fromTokenAddress, toTokenAddress] = payload.split('|');
+
+    if (!chain || !amount || !fromTokenAddress || !toTokenAddress) {
+      throw new BusinessException('Preset callback повреждён');
+    }
+
+    return {
+      chain: chain as ChainType,
+      amount,
+      fromTokenAddress,
+      toTokenAddress,
+    };
   }
 
   private getMatch(matches: RegExpExecArray, index: number): string {

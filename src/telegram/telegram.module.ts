@@ -11,6 +11,7 @@ import { TelegramErrorReplyService } from './telegram.error-reply.service';
 import { TelegramPortfolioAlertsService } from './telegram.portfolio-alerts.service';
 import { TelegramPortfolioFavoritesService } from './telegram.portfolio-favorites.service';
 import { TelegramPortfolioHistoryService } from './telegram.portfolio-history.service';
+import { TelegramPortfolioBalanceService } from './telegram.portfolio-balance.service';
 import { TelegramPortfolioParserService } from './telegram.portfolio-parser.service';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramQrService } from './telegram.qr.service';
@@ -20,6 +21,7 @@ import { TelegramSettingsParserService } from './telegram.settings-parser.servic
 import { TelegramSettingsPersistenceService } from './telegram.settings-persistence.service';
 import { TelegramSettingsReplyService } from './telegram.settings-reply.service';
 import { TelegramStartHelpService } from './telegram.start-help.service';
+import { TelegramTradeTemplatesService } from './telegram.trade-templates.service';
 import { TelegramTradingApproveService } from './telegram.trading-approve.service';
 import { TelegramTradingButtonsService } from './telegram.trading-buttons.service';
 import { TelegramTradingParserService } from './telegram.trading-parser.service';
@@ -30,9 +32,11 @@ import { AlertsModule } from '../alerts/alerts.module';
 import { AllowanceModule } from '../allowance/allowance.module';
 import { FavoritesModule } from '../favorites/favorites.module';
 import { HistoryModule } from '../history/history.module';
+import { PortfolioModule } from '../portfolio/portfolio.module';
 import { PriceModule } from '../price/price.module';
 import { SettingsModule } from '../settings/settings.module';
 import { SwapModule } from '../swap/swap.module';
+import { TradePresetsModule } from '../trade-presets/trade-presets.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
 
@@ -47,6 +51,8 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
     TransactionsModule,
     WalletConnectModule,
     AllowanceModule,
+    PortfolioModule,
+    TradePresetsModule,
   ],
   providers: [
     TelegramSettingsHandler,
@@ -66,8 +72,10 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
     TelegramPortfolioAlertsService,
     TelegramPortfolioFavoritesService,
     TelegramPortfolioHistoryService,
+    TelegramPortfolioBalanceService,
     TelegramPortfolioParserService,
     TelegramPortfolioService,
+    TelegramTradeTemplatesService,
     TelegramTradingApproveService,
     TelegramTradingButtonsService,
     TelegramTradingParserService,

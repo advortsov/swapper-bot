@@ -14,10 +14,13 @@ import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { formatSwapValidity } from './telegram.time';
 import { TelegramTradingButtonsService } from './telegram.trading-buttons.service';
 import { TelegramTradingParserService } from './telegram.trading-parser.service';
+import { TelegramTradeTemplatesService } from './telegram.trade-templates.service';
 import { PriceService } from '../price/price.service';
 import { HighRiskRouteException } from '../route-safety/high-risk-route.exception';
 import { RouteBlockedException } from '../route-safety/route-blocked.exception';
 import { SwapService } from '../swap/swap.service';
+
+const MAX_TRADE_PRESETS = 10;
 
 @Injectable()
 export class TelegramTradingQuoteService {
@@ -29,6 +32,7 @@ export class TelegramTradingQuoteService {
     private readonly swapService: SwapService,
     private readonly portfolioService: TelegramPortfolioService,
     private readonly telegramTradingButtonsService: TelegramTradingButtonsService,
+    private readonly telegramTemplatesService: TelegramTradeTemplatesService,
   ) {}
 
   public async handlePrice(
@@ -47,7 +51,7 @@ export class TelegramTradingQuoteService {
       explicitChain: command.explicitChain,
     });
 
-    const keyboard = this.portfolioService.buildFavoriteActionButtons({
+    const favoriteButtons = this.portfolioService.buildFavoriteActionButtons({
       chain: result.chain,
       amount: result.fromAmount,
       fromTokenAddress: result.fromTokenAddress,
@@ -55,9 +59,23 @@ export class TelegramTradingQuoteService {
       userId,
     });
 
+    const presetButton = [
+      [
+        {
+          text: '📋 Сохранить как пресет',
+          callback_data: this.telegramTradingParserService.buildPresetSaveCallbackData({
+            chain: result.chain,
+            amount: result.fromAmount,
+            fromTokenAddress: result.fromTokenAddress,
+            toTokenAddress: result.toTokenAddress,
+          }),
+        },
+      ],
+    ];
+
     await context.reply(buildPriceMessage(result), {
       parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: keyboard },
+      reply_markup: { inline_keyboard: [...presetButton, ...favoriteButtons] },
     });
   }
 
@@ -77,6 +95,20 @@ export class TelegramTradingQuoteService {
       explicitChain: command.explicitChain,
     });
 
+    const presetButton = [
+      [
+        {
+          text: '📋 Сохранить как пресет',
+          callback_data: this.telegramTradingParserService.buildPresetSaveCallbackData({
+            chain: quotes.chain,
+            amount: quotes.fromAmount,
+            fromTokenAddress: quotes.fromTokenAddress,
+            toTokenAddress: quotes.toTokenAddress,
+          }),
+        },
+      ],
+    ];
+
     await context.reply(buildSwapQuotesMessage(quotes, formatSwapValidity(quotes.quoteExpiresAt)), {
       parse_mode: 'HTML',
       reply_markup: {
@@ -86,6 +118,7 @@ export class TelegramTradingQuoteService {
             quotes.toSymbol,
             quotes.aggregator,
           ),
+          ...presetButton,
           ...this.portfolioService.buildFavoriteActionButtons({
             chain: quotes.chain,
             amount: quotes.fromAmount,

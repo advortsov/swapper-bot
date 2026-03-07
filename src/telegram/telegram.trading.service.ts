@@ -97,6 +97,10 @@ export class TelegramTradingService {
     return this.telegramTradingParserService.isRiskCallback(data);
   }
 
+  public isPresetSaveCallback(data: string): boolean {
+    return this.telegramTradingParserService.isPresetSaveCallback(data);
+  }
+
   public async handleRiskCallback(
     context: Context,
     userId: string,

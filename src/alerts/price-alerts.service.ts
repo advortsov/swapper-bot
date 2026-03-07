@@ -5,6 +5,7 @@ import { PriceAlertsRepository } from './price-alerts.repository';
 import { BusinessException } from '../common/exceptions/business.exception';
 import { FavoritesService } from '../favorites/favorites.service';
 import type {
+  ICreatePriceAlertInput,
   IPriceAlertRecord,
   IPriceAlertWithFavorite,
 } from './interfaces/price-alert.interface';
@@ -12,6 +13,7 @@ import type { IFavoritePairView } from '../favorites/interfaces/favorite-pair.in
 
 const DEFAULT_MAX_ACTIVE_ALERTS = 20;
 const MIN_ACTIVE_ALERTS = 1;
+const PERCENTAGE_MULTIPLIER = 100;
 
 @Injectable()
 export class PriceAlertsService {
@@ -46,7 +48,24 @@ export class PriceAlertsService {
       favoriteId: favorite.id,
       userId,
       targetToAmount: normalizedTarget,
+      kind: 'fixed',
+      direction: null,
+      repeatable: false,
     });
+  }
+
+  public async upsertAdvancedAlert(input: ICreatePriceAlertInput): Promise<IPriceAlertRecord> {
+    const existing = await this.priceAlertsRepository.findActiveByAlertId(input.userId);
+
+    if (input.favoriteId && !existing) {
+      const activeCount = await this.priceAlertsRepository.countActiveByUser(input.userId);
+
+      if (activeCount >= this.maxActiveAlerts) {
+        throw new BusinessException(`Превышен лимит активных алертов (${this.maxActiveAlerts})`);
+      }
+    }
+
+    return this.priceAlertsRepository.upsertActiveAlert(input);
   }
 
   public async cancelAlert(userId: string, favoriteId: string): Promise<boolean> {
@@ -92,7 +111,7 @@ export class PriceAlertsService {
     }
 
     const previous = Number.parseFloat(alert.lastObservedNetToAmount);
-    const target = Number.parseFloat(alert.targetToAmount);
+    const target = Number.parseFloat(alert.targetToAmount ?? '0');
     const current = Number.parseFloat(currentNetToAmount);
 
     if (![previous, target, current].every((value) => Number.isFinite(value))) {
@@ -103,6 +122,138 @@ export class PriceAlertsService {
     const crossedDown = previous > target && current <= target;
 
     return crossedUp || crossedDown;
+  }
+
+  public shouldTriggerDirection(
+    alert: Pick<IPriceAlertRecord, 'direction' | 'lastObservedNetToAmount'>,
+    currentPrice: string,
+  ): boolean {
+    if (alert.direction === null) {
+      return false;
+    }
+
+    const lastPrice = alert.lastObservedNetToAmount
+      ? Number.parseFloat(alert.lastObservedNetToAmount)
+      : null;
+
+    const current = Number.parseFloat(currentPrice);
+
+    if (lastPrice === null) {
+      return false;
+    }
+
+    if (alert.direction === 'up' && current >= lastPrice) {
+      return true;
+    }
+
+    if (alert.direction === 'down' && current <= lastPrice) {
+      return true;
+    }
+
+    if (alert.direction === 'cross') {
+      if (lastPrice < current) {
+        return current >= lastPrice;
+      }
+
+      return current <= lastPrice;
+    }
+
+    return false;
+  }
+
+  public shouldTriggerPercentage(
+    alert: Pick<IPriceAlertRecord, 'lastObservedNetToAmount' | 'percentageChange'>,
+    currentPrice: string,
+  ): boolean {
+    if (alert.percentageChange === null) {
+      return false;
+    }
+
+    const lastPrice = alert.lastObservedNetToAmount
+      ? Number.parseFloat(alert.lastObservedNetToAmount)
+      : null;
+
+    const current = Number.parseFloat(currentPrice);
+    const percentage = alert.percentageChange;
+
+    if (lastPrice === null) {
+      return false;
+    }
+
+    const change = Math.abs(current - lastPrice) / lastPrice;
+
+    return change >= percentage / PERCENTAGE_MULTIPLIER;
+  }
+
+  public isInQuietHours(quietHoursStart: string | null, quietHoursEnd: string | null): boolean {
+    if (!quietHoursStart || !quietHoursEnd) {
+      return false;
+    }
+
+    const now = new Date();
+    const currentHour = now.getHours();
+    const startParts = quietHoursStart.split(':');
+    const endParts = quietHoursEnd.split(':');
+
+    if (startParts.length !== 2 || endParts.length !== 2) {
+      return false;
+    }
+
+    const startHour = Number.parseInt(startParts[0] ?? '0', 10);
+    const endHour = Number.parseInt(endParts[0] ?? '0', 10);
+    const startMin = Number.parseInt(startParts[1] ?? '0', 10);
+    const endMin = Number.parseInt(endParts[1] ?? '0', 10);
+
+    if (currentHour < startHour || currentHour > endHour) {
+      return false;
+    }
+
+    if (currentHour === startHour && currentHour === endHour) {
+      if (startMin > endMin) {
+        return false;
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  public async resetRepeatableAlert(alertId: string): Promise<IPriceAlertRecord | null> {
+    const existing = await this.priceAlertsRepository.findActiveByAlertId(alertId);
+
+    if (!existing) {
+      return null;
+    }
+
+    const input: ICreatePriceAlertInput = {
+      favoriteId: existing.favoriteId,
+      userId: existing.userId,
+      targetToAmount: existing.targetToAmount,
+      kind: existing.kind,
+      repeatable: existing.repeatable,
+    };
+
+    if (existing.direction) {
+      input.direction = existing.direction;
+    }
+    if (existing.percentageChange !== null) {
+      input.percentageChange = existing.percentageChange;
+    }
+    if (existing.quietHoursStart) {
+      input.quietHoursStart = existing.quietHoursStart;
+    }
+    if (existing.quietHoursEnd) {
+      input.quietHoursEnd = existing.quietHoursEnd;
+    }
+    if (existing.watchTokenAddress) {
+      input.watchTokenAddress = existing.watchTokenAddress;
+    }
+    if (existing.watchChain) {
+      input.watchChain = existing.watchChain;
+    }
+
+    return this.priceAlertsRepository.createRepeatableAlert(input);
   }
 
   private async getFavoriteOrThrow(userId: string, favoriteId: string): Promise<IFavoritePairView> {

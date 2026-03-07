@@ -4,8 +4,10 @@ import type { Context } from 'telegraf';
 import { TelegramConnectionsService } from './telegram.connections.service';
 import { TelegramErrorReplyService } from './telegram.error-reply.service';
 import { buildTransactionStatusMessage } from './telegram.message-formatters';
+import { TelegramPortfolioBalanceService } from './telegram.portfolio-balance.service';
 import { TelegramPortfolioService } from './telegram.portfolio.service';
 import { TelegramSettingsHandler } from './telegram.settings-handler';
+import { TelegramTradeTemplatesService } from './telegram.trade-templates.service';
 import { TelegramTradingService } from './telegram.trading.service';
 import { TransactionTrackerService } from '../transactions/transaction-tracker.service';
 
@@ -21,6 +23,8 @@ export class TelegramCommandRouterService {
     private readonly settingsHandler: TelegramSettingsHandler,
     private readonly tradingService: TelegramTradingService,
     private readonly portfolioService: TelegramPortfolioService,
+    private readonly portfolioBalanceService: TelegramPortfolioBalanceService,
+    private readonly templatesService: TelegramTradeTemplatesService,
     private readonly connectionsService: TelegramConnectionsService,
   ) {}
 
@@ -194,6 +198,62 @@ export class TelegramCommandRouterService {
       await this.portfolioService.handleHistory(context, from.id.toString());
     } catch (error: unknown) {
       await this.errorReplyService.replyWithError(context, 'History command failed', error);
+    }
+  }
+
+  public async handlePortfolio(context: Context): Promise<void> {
+    const from = context.from;
+
+    if (!from) {
+      return;
+    }
+
+    try {
+      await this.portfolioBalanceService.handlePortfolio(context, from.id.toString());
+    } catch (error: unknown) {
+      await this.errorReplyService.replyWithError(context, 'Portfolio command failed', error);
+    }
+  }
+
+  public async handleTemplates(context: Context): Promise<void> {
+    const from = context.from;
+
+    if (!from) {
+      return;
+    }
+
+    try {
+      await this.templatesService.handleTemplates(context, from.id.toString());
+    } catch (error: unknown) {
+      await this.errorReplyService.replyWithError(context, 'Templates command failed', error);
+    }
+  }
+
+  public async handlePresetAdd(context: Context, userId: string, data: string): Promise<void> {
+    const from = context.from;
+
+    if (!from) {
+      return;
+    }
+
+    try {
+      await this.templatesService.handlePresetAdd(context, userId, data);
+    } catch (error: unknown) {
+      await this.errorReplyService.replyWithError(context, 'Preset add failed', error);
+    }
+  }
+
+  public async handlePresetDelete(context: Context, userId: string, data: string): Promise<void> {
+    const from = context.from;
+
+    if (!from) {
+      return;
+    }
+
+    try {
+      await this.templatesService.handlePresetDelete(context, userId, data);
+    } catch (error: unknown) {
+      await this.errorReplyService.replyWithError(context, 'Preset delete failed', error);
     }
   }
 

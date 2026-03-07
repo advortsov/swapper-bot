@@ -3,6 +3,7 @@ import type { ChainType } from '../chains/interfaces/chain.interface';
 import type { IFavoritePairView } from '../favorites/interfaces/favorite-pair.interface';
 import type { ISwapHistoryItem } from '../history/interfaces';
 import type { ITrackedTransaction } from '../transactions/interfaces/transaction-tracker.interface';
+import type { IPortfolioSummary } from '../portfolio/interfaces/portfolio.interface';
 import { escapeHtml } from '../wallet-connect/wallet-connect.utils';
 
 interface IFavoriteViewItem {
@@ -89,12 +90,15 @@ export function buildAlertPromptMessage(): string {
 }
 
 export function buildAlertCreatedMessage(input: {
-  targetToAmount: string;
+  targetToAmount: string | null;
   toTokenSymbol: string;
   amount: string;
   fromTokenSymbol: string;
 }): string {
-  return `✅ Алерт установлен: ${escapeHtml(input.targetToAmount)} ${escapeHtml(input.toTokenSymbol)} для ${escapeHtml(input.amount)} ${escapeHtml(input.fromTokenSymbol)} → ${escapeHtml(input.toTokenSymbol)}.`;
+  const targetText = input.targetToAmount
+    ? `${escapeHtml(input.targetToAmount)} ${escapeHtml(input.toTokenSymbol)}`
+    : `без целевой суммы`;
+  return `✅ Алерт установлен: ${targetText} для ${escapeHtml(input.amount)} ${escapeHtml(input.fromTokenSymbol)} → ${escapeHtml(input.toTokenSymbol)}.`;
 }
 
 export function buildAlertTriggeredMessage(input: {
@@ -193,6 +197,136 @@ function pushOptionalLine(
   if (value) {
     lines.push(format(value));
   }
+}
+
+export function buildPortfolioMessage(summary: IPortfolioSummary): string {
+  const lines = ['💼 <b>Портфель</b>'];
+
+  if (summary.totalEstimatedUsd !== '$0.00') {
+    lines.push(`💰 Оценка: ${escapeHtml(summary.totalEstimatedUsd)}`);
+  }
+
+  lines.push('');
+
+  for (const [index, asset] of summary.assets.entries()) {
+    const valueText = formatAmount(asset.balanceFormatted, asset.symbol);
+    lines.push(
+      `<b>${index + 1}) ${escapeHtml(asset.symbol)}</b>`,
+      `🌐 ${escapeHtml(asset.chain)}`,
+      `💎 Баланс: ${escapeHtml(valueText)}`,
+    );
+
+    if (asset.address !== asset.symbol) {
+      lines.push(`📍 <code>${escapeHtml(asset.address.slice(0, 8))}...${asset.address.slice(-6)}</code>`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// Advanced alerts formatters
+
+export function buildAlertKindSelectionMessage(): string {
+  return [
+    '🔔 <b>Тип алерта</b>',
+    '',
+    'Выбери тип алерта:',
+    '',
+    '📊 <b>Fixed</b> - Срабатывает при достижении конкретной цены',
+    '📈 <b>Percentage</b> - Срабатывает при изменении цены на X%',
+    '🪙 <b>Asset</b> - Следит за конкретным токеном',
+  ].join('\n');
+}
+
+export function buildAlertDirectionSelectionMessage(): string {
+  return [
+    '🔔 <b>Направление алерта</b>',
+    '',
+    'Выбери направление отслеживания:',
+    '',
+    '⬆️ <b>Up</b> - Только рост цены',
+    '⬇️ <b>Down</b> - Только падение цены',
+    '🔄 <b>Cross</b> - Любое пересечение уровня',
+  ].join('\n');
+}
+
+export function buildAlertQuietHoursPromptMessage(): string {
+  return [
+    '🔔 <b>Тихие часы</b>',
+    '',
+    'Введи время тихих часов в формате <code>HH:MM-HH:MM</code>',
+    'Например: <code>22:00-08:00</code>',
+    '',
+    'В это время алерты не будут отправляться.',
+    'Оставь пустым, чтобы отключить тихие часы.',
+  ].join('\n');
+}
+
+export function buildRepeatableToggleMessage(enabled: boolean): string {
+  const status = enabled ? '✅ Включено' : '❌ Выключено';
+  return [
+    '🔔 <b>Повторяемость алерта</b>',
+    '',
+    `Статус: ${status}`,
+    '',
+    'Если включено, алерт автоматически создастся заново после срабатывания.',
+  ].join('\n');
+}
+
+export function buildAssetAlertCreationMessage(): string {
+  return [
+    '🔔 <b>Создание алерта по активу</b>',
+    '',
+    'Алерт по активу следит за ценой конкретного токена',
+    'без привязки к конкретной паре обмена.',
+    '',
+    'Выбери токен для отслеживания:',
+  ].join('\n');
+}
+
+export function buildAlertPercentagePromptMessage(): string {
+  return [
+    '🔔 <b>Процент изменения</b>',
+    '',
+    'Введи процент изменения, при котором сработает алерт.',
+    'Например: <code>5</code> для 5% изменения.',
+  ].join('\n');
+}
+
+export function buildAdvancedAlertCreatedMessage(input: {
+  kind: string;
+  direction: string | null;
+  percentageChange: number | null;
+  targetToAmount: string | null;
+  repeatable: boolean;
+  quietHours: string | null;
+}): string {
+  const lines = ['✅ <b>Алерт создан</b>', ''];
+
+  lines.push(`📊 Тип: <b>${escapeHtml(input.kind)}</b>`);
+
+  if (input.direction) {
+    const directionEmoji = input.direction === 'up' ? '⬆️' : input.direction === 'down' ? '⬇️' : '🔄';
+    lines.push(`🧭 Направление: ${directionEmoji} <b>${escapeHtml(input.direction)}</b>`);
+  }
+
+  if (input.percentageChange) {
+    lines.push(`📈 Процент: <b>${escapeHtml(String(input.percentageChange))}%</b>`);
+  }
+
+  if (input.targetToAmount) {
+    lines.push(`🎯 Цель: <b>${escapeHtml(input.targetToAmount)}</b>`);
+  }
+
+  if (input.repeatable) {
+    lines.push('🔄 Повторяемость: <b>Включена</b>');
+  }
+
+  if (input.quietHours) {
+    lines.push(`🌙 Тихие часы: <code>${escapeHtml(input.quietHours)}</code>`);
+  }
+
+  return lines.join('\n');
 }
 
 export type { IFavoriteViewItem };

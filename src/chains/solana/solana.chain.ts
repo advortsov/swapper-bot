@@ -129,4 +129,42 @@ export class SolanaChain implements IChain {
       return null;
     }
   }
+
+  public async getBalance(walletAddress: string): Promise<bigint> {
+    const result = await this.connection.getBalance(new PublicKey(walletAddress));
+    return BigInt(result);
+  }
+
+  public async getTokenBalance(walletAddress: string, tokenAddress: string): Promise<bigint> {
+    if (tokenAddress === SOLANA_NATIVE_TOKEN_ADDRESS) {
+      return this.getBalance(walletAddress);
+    }
+
+    try {
+      const accounts = await this.connection.getTokenAccountsByOwner(
+        new PublicKey(walletAddress),
+        { mint: new PublicKey(tokenAddress) },
+      );
+
+      if (accounts.value.length === 0) {
+        return 0n;
+      }
+
+      const account = accounts.value[0];
+      if (!account) {
+        return 0n;
+      }
+
+      const accountData = account.account.data;
+
+      if (!accountData || !('parsed' in accountData)) {
+        return 0n;
+      }
+
+      const parsed = accountData.parsed as { info: { tokenAmount: { amount: string } } };
+      return BigInt(parsed.info.tokenAmount.amount);
+    } catch {
+      throw new BusinessException(`Failed to get Solana token balance: ${tokenAddress}`);
+    }
+  }
 }
