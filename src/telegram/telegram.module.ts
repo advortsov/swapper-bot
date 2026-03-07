@@ -36,6 +36,7 @@ import { PortfolioModule } from '../portfolio/portfolio.module';
 import { PriceModule } from '../price/price.module';
 import { SettingsModule } from '../settings/settings.module';
 import { SwapModule } from '../swap/swap.module';
+import { TokensModule } from '../tokens/tokens.module';
 import { TradePresetsModule } from '../trade-presets/trade-presets.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
@@ -52,6 +53,7 @@ import { WalletConnectModule } from '../wallet-connect/wallet-connect.module';
     WalletConnectModule,
     AllowanceModule,
     PortfolioModule,
+    TokensModule,
     TradePresetsModule,
   ],
   providers: [

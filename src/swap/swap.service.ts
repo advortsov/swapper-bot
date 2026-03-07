@@ -10,10 +10,10 @@ import { SwapExpirationService } from './swap.expiration.service';
 import { SwapQuotesService } from './swap.quotes.service';
 import { SwapSelectionService } from './swap.selection.service';
 import { SwapSessionService } from './swap.session.service';
-import type { MetricsService } from '../metrics/metrics.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { HighRiskRouteException } from '../route-safety/high-risk-route.exception';
 import { RouteBlockedException } from '../route-safety/route-blocked.exception';
-import type { RouteRiskService } from '../route-safety/route-risk.service';
+import { RouteRiskService } from '../route-safety/route-risk.service';
 import { UserSettingsService } from '../settings/user-settings.service';
 
 @Injectable()

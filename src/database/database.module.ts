@@ -4,6 +4,7 @@ import { DatabaseService } from './database.service';
 import { SwapExecutionsRepository } from './repositories/swap-executions.repository';
 import { SwapIntentsRepository } from './repositories/swap-intents.repository';
 import { TrackedTransactionsRepository } from './repositories/tracked-transactions.repository';
+import { TradePresetsRepository } from './repositories/trade-presets.repository';
 import { UsersRepository } from './repositories/users.repository';
 
 @Global()
@@ -14,6 +15,7 @@ import { UsersRepository } from './repositories/users.repository';
     SwapIntentsRepository,
     SwapExecutionsRepository,
     TrackedTransactionsRepository,
+    TradePresetsRepository,
   ],
   exports: [
     DatabaseService,
@@ -21,6 +23,7 @@ import { UsersRepository } from './repositories/users.repository';
     SwapIntentsRepository,
     SwapExecutionsRepository,
     TrackedTransactionsRepository,
+    TradePresetsRepository,
   ],
 })
 export class DatabaseModule {}
