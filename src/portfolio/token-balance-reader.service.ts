@@ -18,7 +18,7 @@ const ERC20_BALANCE_ABI = [
 ] as const;
 
 const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
-const SOLANA_NATIVE_TOKEN_ADDRESS = 'So11111111111111111111111111111111111112';
+const SOLANA_NATIVE_TOKEN_ADDRESS = 'So11111111111111111111111111111111111111112';
 
 @Injectable()
 export class TokenBalanceReaderService {

@@ -296,7 +296,7 @@ export class AssetAlertsService {
       return start.minute <= end.minute;
     }
 
-    return false;
+    return true;
   }
 
   public shouldTriggerDirection(
@@ -326,11 +326,7 @@ export class AssetAlertsService {
     }
 
     if (alert.direction === 'cross') {
-      if (lastPrice < current) {
-        return current >= lastPrice;
-      }
-
-      return current <= lastPrice;
+      return current !== lastPrice;
     }
 
     return false;

@@ -61,7 +61,7 @@ export class PortfolioService {
       assets.push({
         chain,
         symbol: 'SOL',
-        address: 'So11111111111111111111111111111111111112',
+        address: 'So11111111111111111111111111111111111111112',
         decimals: nativeDecimals,
         balanceBaseUnits: nativeBalance,
         balanceFormatted: this.formatBalance(nativeBalance, nativeDecimals),
@@ -92,9 +92,9 @@ export class PortfolioService {
   private getNativeSymbol(chain: ChainType): string {
     const symbols: Record<ChainType, string> = {
       ethereum: 'ETH',
-      arbitrum: 'ARB',
+      arbitrum: 'ETH',
       base: 'ETH',
-      optimism: 'OP',
+      optimism: 'ETH',
       solana: 'SOL',
     };
 
@@ -107,7 +107,7 @@ export class PortfolioService {
       arbitrum: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
       base: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
       optimism: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
-      solana: 'So11111111111111111111111111111111111112',
+      solana: 'So11111111111111111111111111111111111111112',
     };
 
     return addresses[chain];

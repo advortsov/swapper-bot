@@ -186,6 +186,8 @@ export class SwapIntentService {
     selectedQuote: IStoredProviderQuoteSnapshot;
     slippage: number;
   }): string {
+    this.purgeExpiredRiskConfirmations();
+
     const confirmToken = randomBytes(CALLBACK_TOKEN_BYTES).toString('base64url');
 
     this.pendingRiskConfirmations.set(confirmToken, {
@@ -219,6 +221,16 @@ export class SwapIntentService {
       selectedQuote: stored.selectedQuote,
       slippage: stored.slippage,
     };
+  }
+
+  private purgeExpiredRiskConfirmations(): void {
+    const now = Date.now();
+
+    for (const [token, data] of this.pendingRiskConfirmations) {
+      if (now > data.expiresAt) {
+        this.pendingRiskConfirmations.delete(token);
+      }
+    }
   }
 
   private toConsumedIntent(result: IConsumeSwapIntentSelectionResult): IConsumedSwapIntent {

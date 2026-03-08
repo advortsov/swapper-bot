@@ -151,11 +151,7 @@ export class PriceAlertsService {
     }
 
     if (alert.direction === 'cross') {
-      if (lastPrice < current) {
-        return current >= lastPrice;
-      }
-
-      return current <= lastPrice;
+      return current !== lastPrice;
     }
 
     return false;
@@ -229,7 +225,7 @@ export class PriceAlertsService {
       return start.minute <= end.minute;
     }
 
-    return false;
+    return true;
   }
 
   public async resetRepeatableAlert(alertId: string): Promise<IPriceAlertRecord | null> {

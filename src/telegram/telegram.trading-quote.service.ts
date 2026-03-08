@@ -179,7 +179,17 @@ export class TelegramTradingQuoteService {
     connectionsService: TelegramConnectionsService,
   ): Promise<void> {
     await context.answerCbQuery('Подготовка свопа...');
-    const session = await this.swapService.confirmRiskySwap(userId, confirmToken);
-    await connectionsService.replySwapSession(context, session);
+
+    try {
+      const session = await this.swapService.confirmRiskySwap(userId, confirmToken);
+      await connectionsService.replySwapSession(context, session);
+    } catch (error) {
+      if (error instanceof RouteBlockedException) {
+        await context.reply(buildRouteBlockedMessage(error.assessment), { parse_mode: 'HTML' });
+        return;
+      }
+
+      throw error;
+    }
   }
 }

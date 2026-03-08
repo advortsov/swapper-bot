@@ -50,7 +50,7 @@ export class TelegramTradeTemplatesService {
         `<b>${index + 1}) ${label}</b>`,
         `🔁 ${pair}`,
         `🌐 ${escapeHtml(preset.chain)}`,
-        `💎 ${preset.defaultAmount ?? 'не указано'}`,
+        `💎 ${escapeHtml(preset.defaultAmount ?? 'не указано')}`,
       );
     }
 

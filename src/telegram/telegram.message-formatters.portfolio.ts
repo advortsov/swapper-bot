@@ -221,7 +221,7 @@ export function buildPortfolioMessage(summary: IPortfolioSummary): string {
 
     if (asset.address !== asset.symbol) {
       lines.push(
-        `📍 <code>${escapeHtml(asset.address.slice(0, ADDRESS_PREFIX_LENGTH))}...${asset.address.slice(-ADDRESS_SUFFIX_LENGTH)}</code>`,
+        `📍 <code>${escapeHtml(asset.address.slice(0, ADDRESS_PREFIX_LENGTH))}...${escapeHtml(asset.address.slice(-ADDRESS_SUFFIX_LENGTH))}</code>`,
       );
     }
   }
