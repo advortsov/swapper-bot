@@ -63,7 +63,7 @@ export class TelegramTradingQuoteService {
       [
         {
           text: '📋 Сохранить как пресет',
-          callback_data: this.telegramTradingParserService.buildPresetSaveCallbackData({
+          callback_data: this.telegramTemplatesService.createPresetSaveCallbackData(userId, {
             chain: result.chain,
             amount: result.fromAmount,
             fromTokenAddress: result.fromTokenAddress,
@@ -99,7 +99,7 @@ export class TelegramTradingQuoteService {
       [
         {
           text: '📋 Сохранить как пресет',
-          callback_data: this.telegramTradingParserService.buildPresetSaveCallbackData({
+          callback_data: this.telegramTemplatesService.createPresetSaveCallbackData(userId, {
             chain: quotes.chain,
             amount: quotes.fromAmount,
             fromTokenAddress: quotes.fromTokenAddress,

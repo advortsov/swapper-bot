@@ -31,13 +31,6 @@ export interface IApproveCallbackPayload {
   mode: ApprovalMode;
 }
 
-export interface IPresetSavePayload {
-  chain: ChainType;
-  amount: string;
-  fromTokenAddress: string;
-  toTokenAddress: string;
-}
-
 @Injectable()
 export class TelegramTradingParserService {
   public parsePriceCommand(text: string): IPriceCommandDto {
@@ -154,25 +147,18 @@ export class TelegramTradingParserService {
     return data.startsWith(PRESET_CALLBACK_PREFIX);
   }
 
-  public buildPresetSaveCallbackData(payload: IPresetSavePayload): string {
-    const data = `${payload.chain}|${payload.amount}|${payload.fromTokenAddress}|${payload.toTokenAddress}`;
-    return `${PRESET_CALLBACK_PREFIX}${data}`;
+  public buildPresetSaveCallbackData(token: string): string {
+    return `${PRESET_CALLBACK_PREFIX}${token}`;
   }
 
-  public parsePresetSaveData(data: string): IPresetSavePayload {
-    const payload = data.slice(PRESET_CALLBACK_PREFIX.length);
-    const [chain, amount, fromTokenAddress, toTokenAddress] = payload.split('|');
+  public parsePresetSaveToken(data: string): string {
+    const token = data.slice(PRESET_CALLBACK_PREFIX.length).trim();
 
-    if (!chain || !amount || !fromTokenAddress || !toTokenAddress) {
+    if (token === '') {
       throw new BusinessException('Preset callback повреждён');
     }
 
-    return {
-      chain: chain as ChainType,
-      amount,
-      fromTokenAddress,
-      toTokenAddress,
-    };
+    return token;
   }
 
   private getMatch(matches: RegExpExecArray, index: number): string {

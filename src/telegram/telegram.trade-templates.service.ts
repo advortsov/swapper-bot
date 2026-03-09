@@ -132,6 +132,33 @@ export class TelegramTradeTemplatesService {
     }
   }
 
+  public createPresetSaveCallbackData(userId: string, payload: IPresetCreationPayload): string {
+    const token = this.createToken();
+    this.sessionStore.createPendingAction({
+      token,
+      userId,
+      kind: 'preset-save',
+      payload: payload as unknown as Record<string, unknown>,
+    });
+    return `pst:${token}`;
+  }
+
+  public async handlePresetSaveByToken(
+    context: Context,
+    userId: string,
+    token: string,
+  ): Promise<void> {
+    const action = this.sessionStore.consumePendingAction(userId, token);
+
+    if (!action) {
+      await context.answerCbQuery('Действие истекло');
+      return;
+    }
+
+    const payload = action.payload as unknown as IPresetCreationPayload;
+    await this.handlePresetSave(context, userId, payload);
+  }
+
   public createAddCallbackToken(userId: string, payload: IPresetCreationPayload): string {
     const token = this.createToken();
     this.sessionStore.createPendingAction({

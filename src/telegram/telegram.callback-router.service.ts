@@ -72,8 +72,8 @@ export class TelegramCallbackRouterService {
     }
 
     if (this.tradingService.isPresetSaveCallback(data)) {
-      const payload = this.tradingParserService.parsePresetSaveData(data);
-      await this.templatesService.handlePresetSave(context, userId, payload);
+      const token = this.tradingParserService.parsePresetSaveToken(data);
+      await this.templatesService.handlePresetSaveByToken(context, userId, token);
       return true;
     }
 
