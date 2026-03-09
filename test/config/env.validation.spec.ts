@@ -168,4 +168,60 @@ describe('validateEnvironment', () => {
       'Environment variable "PARASWAP_API_VERSION" must be "6.2"',
     );
   });
+
+  it('должен требовать INTERNAL_API_TOKEN при включенном INTERNAL_API_ENABLED', () => {
+    const environmentWithEnabledInternalApi = {
+      ...validEnvironment,
+      INTERNAL_API_ENABLED: 'true',
+    };
+
+    expect(() => validateEnvironment(environmentWithEnabledInternalApi)).toThrowError(
+      'Environment variable "INTERNAL_API_TOKEN" is required',
+    );
+  });
+
+  it('не должен требовать INTERNAL_API_TOKEN при выключенном INTERNAL_API_ENABLED', () => {
+    const environmentWithDisabledInternalApi = {
+      ...validEnvironment,
+      INTERNAL_API_ENABLED: 'false',
+    };
+
+    const result = validateEnvironment(environmentWithDisabledInternalApi);
+
+    expect(result).toMatchObject({
+      INTERNAL_API_ENABLED: 'false',
+    });
+  });
+
+  it('должен принимать INTERNAL_API_TOKEN при включенном INTERNAL_API_ENABLED', () => {
+    const environmentWithInternalApiToken = {
+      ...validEnvironment,
+      INTERNAL_API_ENABLED: 'true',
+      INTERNAL_API_TOKEN: 'test-token-123',
+    };
+
+    const result = validateEnvironment(environmentWithInternalApiToken);
+
+    expect(result).toMatchObject({
+      INTERNAL_API_ENABLED: 'true',
+      INTERNAL_API_TOKEN: 'test-token-123',
+    });
+  });
+
+  it('должен принимать INTERNAL_API_ALLOWED_IPS как опциональное значение', () => {
+    const environmentWithAllowedIps = {
+      ...validEnvironment,
+      INTERNAL_API_ENABLED: 'true',
+      INTERNAL_API_TOKEN: 'test-token-123',
+      INTERNAL_API_ALLOWED_IPS: '192.168.1.1,10.0.0.1',
+    };
+
+    const result = validateEnvironment(environmentWithAllowedIps);
+
+    expect(result).toMatchObject({
+      INTERNAL_API_ENABLED: 'true',
+      INTERNAL_API_TOKEN: 'test-token-123',
+      INTERNAL_API_ALLOWED_IPS: '192.168.1.1,10.0.0.1',
+    });
+  });
 });

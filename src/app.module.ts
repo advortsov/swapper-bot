@@ -11,6 +11,7 @@ import { DatabaseModule } from './database/database.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { HealthModule } from './health/health.module';
 import { HistoryModule } from './history/history.module';
+import { InternalApiModule } from './internal-api/internal-api.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { PriceModule } from './price/price.module';
 import { RouteSafetyModule } from './route-safety/route-safety.module';
@@ -53,6 +54,7 @@ const envFilePath = [
     SwapModule,
     TelegramModule,
     HealthModule,
+    ...(process.env['INTERNAL_API_ENABLED'] === 'true' ? [InternalApiModule] : []),
   ],
 })
 export class AppModule {}

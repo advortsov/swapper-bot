@@ -12,6 +12,9 @@ import {
   ENV_KEY_CACHE_TTL_PRICE,
   ENV_KEY_COINGECKO_API_BASE_URL,
   ENV_KEY_DATABASE_URL,
+  ENV_KEY_INTERNAL_API_ALLOWED_IPS,
+  ENV_KEY_INTERNAL_API_ENABLED,
+  ENV_KEY_INTERNAL_API_TOKEN,
   ENV_KEY_MAX_ACTIVE_PRICE_ALERTS_PER_USER,
   ENV_KEY_METRICS_ENABLED,
   ENV_KEY_NODE_ENV,
@@ -50,6 +53,25 @@ import {
 export { type NodeEnvironment } from './env.validation.constants';
 
 export function validateEnvironment(source: EnvironmentSource): EnvironmentResult {
+  return buildValidatedEnvironment(source);
+}
+
+function buildValidatedEnvironment(source: EnvironmentSource): EnvironmentResult {
+  const coreConfig = validateCoreEnvironment(source);
+  const txTrackingEnvironment = validateTxTrackingEnvironment(source);
+  const feeEnvironment = validateFeeEnvironment(source);
+  const internalApiEnvironment = validateInternalApiEnvironment(source);
+
+  return {
+    ...source,
+    ...coreConfig,
+    ...feeEnvironment,
+    ...txTrackingEnvironment,
+    ...internalApiEnvironment,
+  };
+}
+
+function validateCoreEnvironment(source: EnvironmentSource): EnvironmentResult {
   const nodeEnv = validateNodeEnvironment(getRequiredString(source, ENV_KEY_NODE_ENV));
   const port = validatePort(getRequiredString(source, ENV_KEY_PORT));
   const databaseUrl = getRequiredString(source, ENV_KEY_DATABASE_URL);
@@ -100,14 +122,11 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     DEFAULT_SWAP_SLIPPAGE,
     MIN_SLIPPAGE,
   );
-  const txTrackingEnvironment = validateTxTrackingEnvironment(source);
-  const feeEnvironment = validateFeeEnvironment(source);
   const telegramBotToken = telegramEnabled
     ? getRequiredString(source, ENV_KEY_TELEGRAM_BOT_TOKEN)
     : undefined;
 
   return {
-    ...source,
     [ENV_KEY_NODE_ENV]: nodeEnv,
     [ENV_KEY_PORT]: port,
     [ENV_KEY_DATABASE_URL]: databaseUrl,
@@ -123,9 +142,7 @@ export function validateEnvironment(source: EnvironmentSource): EnvironmentResul
     [ENV_KEY_MAX_ACTIVE_PRICE_ALERTS_PER_USER]: maxActivePriceAlerts.toString(),
     [ENV_KEY_COINGECKO_API_BASE_URL]: coinGeckoApiBaseUrl ?? source[ENV_KEY_COINGECKO_API_BASE_URL],
     [ENV_KEY_SWAP_SLIPPAGE]: swapSlippage.toString(),
-    ...feeEnvironment,
     [ENV_KEY_TELEGRAM_BOT_TOKEN]: telegramBotToken ?? source[ENV_KEY_TELEGRAM_BOT_TOKEN],
-    ...txTrackingEnvironment,
   };
 }
 
@@ -144,5 +161,20 @@ function validateTxTrackingEnvironment(source: EnvironmentSource): EnvironmentRe
       DEFAULT_TX_TRACKING_TIMEOUT,
       MIN_TX_TRACKING_TIMEOUT,
     ).toString(),
+  };
+}
+
+function validateInternalApiEnvironment(source: EnvironmentSource): EnvironmentResult {
+  const internalApiEnabled = getBoolean(source, ENV_KEY_INTERNAL_API_ENABLED, false);
+  const internalApiToken = internalApiEnabled
+    ? getRequiredString(source, ENV_KEY_INTERNAL_API_TOKEN)
+    : undefined;
+  const internalApiAllowedIps = getOptionalString(source, ENV_KEY_INTERNAL_API_ALLOWED_IPS);
+
+  return {
+    [ENV_KEY_INTERNAL_API_ENABLED]: internalApiEnabled.toString(),
+    [ENV_KEY_INTERNAL_API_TOKEN]: internalApiToken ?? source[ENV_KEY_INTERNAL_API_TOKEN],
+    [ENV_KEY_INTERNAL_API_ALLOWED_IPS]:
+      internalApiAllowedIps ?? source[ENV_KEY_INTERNAL_API_ALLOWED_IPS],
   };
 }

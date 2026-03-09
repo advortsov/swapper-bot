@@ -53,6 +53,12 @@ export const appConfig = registerAs(APP_CONFIG_NAMESPACE, () => {
   );
   const coinGeckoApiBaseUrl = getEnvValue('COINGECKO_API_BASE_URL', COINGECKO_API_BASE_URL_DEFAULT);
   const swapSlippage = Number.parseFloat(getEnvValue('SWAP_SLIPPAGE', SWAP_SLIPPAGE_DEFAULT));
+  const internalApiEnabled = getEnvValue('INTERNAL_API_ENABLED', 'false') === 'true';
+  const internalApiToken = getEnvValue('INTERNAL_API_TOKEN', '');
+  const internalApiAllowedIps = getEnvValue('INTERNAL_API_ALLOWED_IPS', '')
+    .split(',')
+    .map((ip) => ip.trim())
+    .filter((ip) => ip.length > 0);
 
   return {
     serviceName: SERVICE_NAME,
@@ -71,5 +77,8 @@ export const appConfig = registerAs(APP_CONFIG_NAMESPACE, () => {
     maxActivePriceAlertsPerUser,
     coinGeckoApiBaseUrl,
     swapSlippage,
+    internalApiEnabled,
+    internalApiToken,
+    internalApiAllowedIps,
   };
 });

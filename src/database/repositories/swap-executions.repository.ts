@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
 import { DatabaseService } from '../database.service';
+import type { ISwapExecutionRecord } from '../database.types';
 
 export interface ICreateSwapExecutionPayload {
   intentId: string;
@@ -124,5 +125,44 @@ export class SwapExecutionsRepository {
       .executeTakeFirst();
 
     return row?.intentId ?? null;
+  }
+
+  public async findById(executionId: string): Promise<ISwapExecutionRecord | null> {
+    const row = await this.databaseService
+      .getConnection()
+      .selectFrom('swap_executions')
+      .selectAll()
+      .where('id', '=', executionId)
+      .executeTakeFirst();
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      intentId: row.intent_id,
+      userId: row.user_id,
+      chain: row.chain,
+      aggregator: row.aggregator,
+      feeMode: row.fee_mode,
+      feeBps: row.fee_bps,
+      feeRecipient: row.fee_recipient,
+      grossToAmount: row.gross_to_amount,
+      botFeeAmount: row.bot_fee_amount,
+      netToAmount: row.net_to_amount,
+      quotePayloadHash: row.quote_payload_hash,
+      swapPayloadHash: row.swap_payload_hash,
+      providerReference: row.provider_reference,
+      txHash: row.tx_hash,
+      status: row.status,
+      errorMessage: row.error_message,
+      createdAt: row.created_at,
+      executedAt: row.executed_at,
+      transactionStatus: row.transaction_status,
+      confirmedAt: row.confirmed_at,
+      gasUsed: row.gas_used,
+      effectiveGasPrice: row.effective_gas_price,
+    };
   }
 }

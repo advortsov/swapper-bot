@@ -144,6 +144,50 @@ export interface ITradePresetsTable {
   created_at: Generated<Date>;
 }
 
+export interface ISwapIntentRecord {
+  id: string;
+  userId: string;
+  chain: string;
+  fromSymbol: string;
+  toSymbol: string;
+  amount: string;
+  rawCommand: string;
+  quoteSnapshot: JsonValue;
+  allowedAggregators: string[];
+  bestAggregator: string;
+  quoteExpiresAt: Date;
+  status: string;
+  createdAt: Date;
+  selectedAggregator: string | null;
+  selectedAt: Date | null;
+}
+
+export interface ISwapExecutionRecord {
+  id: string;
+  intentId: string;
+  userId: string;
+  chain: string;
+  aggregator: string;
+  feeMode: string;
+  feeBps: number;
+  feeRecipient: string | null;
+  grossToAmount: string;
+  botFeeAmount: string;
+  netToAmount: string;
+  quotePayloadHash: string;
+  swapPayloadHash: string;
+  providerReference: string | null;
+  txHash: string | null;
+  status: string;
+  errorMessage: string | null;
+  createdAt: Date;
+  executedAt: Date | null;
+  transactionStatus: string | null;
+  confirmedAt: Date | null;
+  gasUsed: string | null;
+  effectiveGasPrice: string | null;
+}
+
 export interface IDatabase {
   users: IUsersTable;
   tokens: ITokensTable;

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 
 import { DatabaseService } from '../database.service';
+import type { ISwapIntentRecord } from '../database.types';
 
 export interface ICreateSwapIntentOptionPayload {
   selectionToken: string;
@@ -159,5 +160,36 @@ export class SwapIntentsRepository {
       .set({ status })
       .where('id', '=', intentId)
       .execute();
+  }
+
+  public async findById(intentId: string): Promise<ISwapIntentRecord | null> {
+    const row = await this.databaseService
+      .getConnection()
+      .selectFrom('swap_intents')
+      .selectAll()
+      .where('id', '=', intentId)
+      .executeTakeFirst();
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      userId: row.user_id,
+      chain: row.chain,
+      fromSymbol: row.from_symbol,
+      toSymbol: row.to_symbol,
+      amount: row.amount,
+      rawCommand: row.raw_command,
+      quoteSnapshot: row.quote_snapshot as Record<string, unknown>,
+      allowedAggregators: row.allowed_aggregators,
+      bestAggregator: row.best_aggregator,
+      quoteExpiresAt: row.quote_expires_at,
+      status: row.status,
+      createdAt: row.created_at,
+      selectedAggregator: row.selected_aggregator,
+      selectedAt: row.selected_at,
+    };
   }
 }
